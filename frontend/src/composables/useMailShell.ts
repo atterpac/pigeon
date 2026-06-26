@@ -63,6 +63,10 @@ function createMailShell() {
     email: '',
     displayName: '',
     appPassword: '',
+    imapHost: '',
+    imapPort: '',
+    smtpHost: '',
+    smtpPort: '',
   })
 
   const filteredConversations = computed(() => activeCategory.value === 'all'
@@ -117,6 +121,10 @@ function createMailShell() {
     if (setup.value.method === 'appPassword' && !setup.value.appPassword.trim()) {
       setupError.value = 'App password is required.'; return false
     }
+    if (setup.value.method === 'imap') {
+      if (!setup.value.imapHost.trim()) { setupError.value = 'IMAP server is required.'; return false }
+      if (!setup.value.appPassword.trim()) { setupError.value = 'Password is required.'; return false }
+    }
     setupBusy.value = true
     setupStatus.value = setup.value.method === 'google' ? 'waiting for Google authorization' : 'verifying account'
     try {
@@ -135,7 +143,7 @@ function createMailShell() {
   }
   // Clears the setup form before re-using it to add another account mid-session.
   function resetSetup() {
-    setup.value = { method: 'google', email: '', displayName: '', appPassword: '' }
+    setup.value = { method: 'google', email: '', displayName: '', appPassword: '', imapHost: '', imapPort: '', smtpHost: '', smtpPort: '' }
     setupError.value = ''
     setupStatus.value = ''
   }

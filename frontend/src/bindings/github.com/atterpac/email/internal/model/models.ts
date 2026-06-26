@@ -18,6 +18,16 @@ export class Account {
     "Email": string;
     "Name": string;
 
+    /**
+     * Connection details for custom IMAP/SMTP accounts. Empty for Gmail and
+     * well-known domains, which are resolved from a built-in endpoint map.
+     * Credentials live in auth.CredentialStore, never here.
+     */
+    "IMAPHost": string;
+    "IMAPPort": number;
+    "SMTPHost": string;
+    "SMTPPort": number;
+
     /** Creates a new Account instance. */
     constructor($$source: Partial<Account> = {}) {
         if (!("ID" in $$source)) {
@@ -31,6 +41,18 @@ export class Account {
         }
         if (!("Name" in $$source)) {
             this["Name"] = "";
+        }
+        if (!("IMAPHost" in $$source)) {
+            this["IMAPHost"] = "";
+        }
+        if (!("IMAPPort" in $$source)) {
+            this["IMAPPort"] = 0;
+        }
+        if (!("SMTPHost" in $$source)) {
+            this["SMTPHost"] = "";
+        }
+        if (!("SMTPPort" in $$source)) {
+            this["SMTPPort"] = 0;
         }
 
         Object.assign(this, $$source);

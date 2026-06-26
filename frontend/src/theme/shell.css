@@ -24,6 +24,8 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .setup-copy dd { margin: 0; color: var(--text-dim); font-size: 14px; line-height: 1.5 }
 .setup-form { display: grid; gap: 14px }
 .setup-methods { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px }
+.setup-methods.triple { grid-template-columns: repeat(3, 1fr) }
+.setup-grid { display: grid; grid-template-columns: 1fr 88px; gap: 10px }
 .setup-methods button { min-height: 76px; text-align: left; border: 1px solid var(--border-2); border-radius: 8px; background: var(--surface-2); color: var(--text-dim); padding: 14px }
 .setup-methods button.active { border-color: var(--accent-line); background: var(--accent-soft) }
 .setup-methods strong { display: block; color: var(--text); font-size: 14px }
@@ -114,13 +116,18 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .toggle.on { background: var(--accent-soft); border-color: var(--accent-line) }
 .toggle.on i { left: 18px; background: var(--accent) }
 .select { flex: none; padding: 6px 12px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border-2); color: var(--text-dim); font: 12px "JetBrains Mono", ui-monospace, monospace }
+.theme-select-row { align-items: flex-start }
+.theme-select { width: min(100%, 260px) }
+.theme-preview { display: flex; align-items: center; gap: 12px; min-height: 46px; margin: 10px 0 4px; padding: 10px 12px; border: 1px solid; border-radius: 8px }
+.theme-preview > span:not(.theme-swatches) { font: 700 14px "JetBrains Mono", ui-monospace, monospace }
+.theme-preview small { margin-left: auto; font: 10.5px "JetBrains Mono", ui-monospace, monospace }
 .theme-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px }
 .theme-tile { display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 12px; border: 1px solid; text-align: left }
 .theme-swatches { display: flex; gap: 5px }
 .theme-swatches i { width: 14px; height: 14px; border-radius: 50% }
 .theme-tile b { font-size: 13px }
 .theme-tile small { font: 10.5px "JetBrains Mono", ui-monospace, monospace }
-@media (max-width: 760px) { .theme-grid { grid-template-columns: repeat(2, 1fr) } .settings-modal { flex-direction: column; height: 86vh } .set-nav { width: 100%; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border) } }
+@media (max-width: 760px) { .theme-grid { grid-template-columns: repeat(2, 1fr) } .theme-select-row { flex-direction: column; align-items: stretch } .theme-select { width: 100% } .theme-preview small { display: none } .settings-modal { flex-direction: column; height: 86vh } .set-nav { width: 100%; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border) } }
 
 /* ── Compose surface presets (R2) ─────────────────────────────────────── */
 .modal-backdrop.no-dim { background: transparent; backdrop-filter: none; pointer-events: none }

@@ -44,6 +44,18 @@ export function AddGoogleAccount(emailAddr: string, displayName: string): $Cance
 }
 
 /**
+ * AddIMAPAccount registers a custom IMAP (incoming) + SMTP (outgoing) account
+ * with an explicit server. Use this for providers that aren't in the built-in
+ * endpoint map. Ports default to IMAP 993 (implicit TLS) and SMTP 587
+ * (STARTTLS) when passed as 0; SMTP host defaults to the IMAP host.
+ */
+export function AddIMAPAccount(emailAddr: string, displayName: string, password: string, imapHost: string, imapPort: number, smtpHost: string, smtpPort: number): $CancellablePromise<email$0.Account> {
+    return $Call.ByID(1121486488, emailAddr, displayName, password, imapHost, imapPort, smtpHost, smtpPort).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+/**
  * ListAccounts returns the configured accounts for the settings UI.
  */
 export function ListAccounts(): $CancellablePromise<email$0.Account[]> {

@@ -30,10 +30,14 @@ func msgIDs(msgs []model.Message) []model.MessageID {
 // UpsertAccount stores or updates an account row.
 func (s *Store) UpsertAccount(ctx context.Context, a model.Account) error {
 	return s.q.UpsertAccount(ctx, gen.UpsertAccountParams{
-		ID:    string(a.ID),
-		Kind:  int64(a.Kind),
-		Email: a.Email,
-		Name:  a.Name,
+		ID:       string(a.ID),
+		Kind:     int64(a.Kind),
+		Email:    a.Email,
+		Name:     a.Name,
+		ImapHost: a.IMAPHost,
+		ImapPort: int64(a.IMAPPort),
+		SmtpHost: a.SMTPHost,
+		SmtpPort: int64(a.SMTPPort),
 	})
 }
 
@@ -80,6 +84,7 @@ func (s *Store) SaveMessages(ctx context.Context, msgs []model.Message) error {
 	}
 	defer tx.Rollback()
 	q := s.q.WithTx(tx)
+	touchedThreads := map[model.ThreadID]struct{}{}
 
 	for _, m := range msgs {
 		if m.Category == "" {
@@ -96,6 +101,7 @@ func (s *Store) SaveMessages(ctx context.Context, msgs []model.Message) error {
 			}
 		}
 		if m.Thread != "" {
+			touchedThreads[m.Thread] = struct{}{}
 			if err := q.UpsertThread(ctx, gen.UpsertThreadParams{
 				ID:      string(m.Thread),
 				Account: string(m.Account),
@@ -107,6 +113,11 @@ func (s *Store) SaveMessages(ctx context.Context, msgs []model.Message) error {
 			}
 		}
 		if err := indexFTS(ctx, tx, m); err != nil {
+			return err
+		}
+	}
+	for thread := range touchedThreads {
+		if err := recalcThreadUnread(ctx, tx, msgs[0].Account, thread); err != nil {
 			return err
 		}
 	}
@@ -134,40 +145,51 @@ func (s *Store) ApplyFlagDeltas(ctx context.Context, account model.AccountID, de
 	if len(deltas) == 0 {
 		return nil
 	}
-	err := s.Tx(ctx, func(q *gen.Queries) error {
-		for _, d := range deltas {
-			cur, err := q.GetFlags(ctx, gen.GetFlagsParams{Account: string(account), ID: string(d.ID)})
-			if errors.Is(err, sql.ErrNoRows) {
-				continue // not synced yet
-			}
-			if err != nil {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	q := s.q.WithTx(tx)
+	touchedThreads := map[model.ThreadID]struct{}{}
+	for _, d := range deltas {
+		msg, err := q.GetMessage(ctx, gen.GetMessageParams{Account: string(account), ID: string(d.ID)})
+		if errors.Is(err, sql.ErrNoRows) {
+			continue // not synced yet
+		}
+		if err != nil {
+			return err
+		}
+		touchedThreads[model.ThreadID(msg.Thread)] = struct{}{}
+		set := flagSet(splitFlags(msg.Flags))
+		for _, f := range d.AddFlags {
+			set[f] = struct{}{}
+		}
+		for _, f := range d.RemoveFlags {
+			delete(set, f)
+		}
+		if err := q.SetFlags(ctx, gen.SetFlagsParams{
+			Flags: joinFlags(flagSlice(set)), Account: string(account), ID: string(d.ID),
+		}); err != nil {
+			return err
+		}
+		for _, l := range d.AddLabels {
+			if err := q.AddLabel(ctx, gen.AddLabelParams{Account: string(account), Message: string(d.ID), Label: string(l)}); err != nil {
 				return err
-			}
-			set := flagSet(splitFlags(cur))
-			for _, f := range d.AddFlags {
-				set[f] = struct{}{}
-			}
-			for _, f := range d.RemoveFlags {
-				delete(set, f)
-			}
-			if err := q.SetFlags(ctx, gen.SetFlagsParams{
-				Flags: joinFlags(flagSlice(set)), Account: string(account), ID: string(d.ID),
-			}); err != nil {
-				return err
-			}
-			for _, l := range d.AddLabels {
-				if err := q.AddLabel(ctx, gen.AddLabelParams{Account: string(account), Message: string(d.ID), Label: string(l)}); err != nil {
-					return err
-				}
-			}
-			for _, l := range d.RemoveLabels {
-				if err := q.RemoveLabel(ctx, gen.RemoveLabelParams{Account: string(account), Message: string(d.ID), Label: string(l)}); err != nil {
-					return err
-				}
 			}
 		}
-		return nil
-	})
+		for _, l := range d.RemoveLabels {
+			if err := q.RemoveLabel(ctx, gen.RemoveLabelParams{Account: string(account), Message: string(d.ID), Label: string(l)}); err != nil {
+				return err
+			}
+		}
+	}
+	for thread := range touchedThreads {
+		if err := recalcThreadUnread(ctx, tx, account, thread); err != nil {
+			return err
+		}
+	}
+	err = tx.Commit()
 	if err != nil {
 		return err
 	}
@@ -177,6 +199,26 @@ func (s *Store) ApplyFlagDeltas(ctx context.Context, account model.AccountID, de
 	}
 	s.publish(account, events.KindFlag, ids)
 	return nil
+}
+
+type execer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func recalcThreadUnread(ctx context.Context, db execer, account model.AccountID, thread model.ThreadID) error {
+	if thread == "" {
+		return nil
+	}
+	_, err := db.ExecContext(ctx, `
+		UPDATE threads
+		SET unread = EXISTS (
+			SELECT 1 FROM messages
+			WHERE account = ? AND thread = ? AND instr(flags, ?) = 0
+		)
+		WHERE account = ? AND id = ?`,
+		string(account), string(thread), string(model.FlagSeen), string(account), string(thread),
+	)
+	return err
 }
 
 // DeleteMessages removes messages and their FTS entries in one transaction.

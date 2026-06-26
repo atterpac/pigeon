@@ -1,7 +1,7 @@
 import * as Onboarding from '@/bindings/github.com/atterpac/email/cmd/email/onboarding'
 import type { Account as BindingAccount } from '@/bindings/github.com/atterpac/email/pkg/email/models'
 
-export type SetupMethod = 'google' | 'appPassword'
+export type SetupMethod = 'google' | 'appPassword' | 'imap'
 
 export type ConfiguredAccount = {
   id: string
@@ -15,6 +15,10 @@ export type AddAccountInput = {
   email: string
   displayName: string
   appPassword: string
+  imapHost: string
+  imapPort: string
+  smtpHost: string
+  smtpPort: string
 }
 
 export function createOnboardingClient() {
@@ -25,10 +29,18 @@ export function createOnboardingClient() {
     async addAccount(input: AddAccountInput) {
       const email = input.email.trim()
       const displayName = input.displayName.trim()
-      const account = input.method === 'google'
-        ? await Onboarding.AddGoogleAccount(email, displayName)
-        : await Onboarding.AddAppPasswordAccount(email, displayName, input.appPassword)
-
+      let account
+      if (input.method === 'google') {
+        account = await Onboarding.AddGoogleAccount(email, displayName)
+      } else if (input.method === 'imap') {
+        account = await Onboarding.AddIMAPAccount(
+          email, displayName, input.appPassword,
+          input.imapHost.trim(), Number(input.imapPort) || 0,
+          input.smtpHost.trim(), Number(input.smtpPort) || 0,
+        )
+      } else {
+        account = await Onboarding.AddAppPasswordAccount(email, displayName, input.appPassword)
+      }
       return normalizeAccount(account)
     },
     async removeAccount(id: string) {
