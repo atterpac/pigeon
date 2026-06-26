@@ -85,6 +85,46 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .cheat-group dd { margin: 0; color: var(--text-dim); font-size: 12.5px }
 @media (max-width: 760px) { .cheat-grid { grid-template-columns: 1fr } }
 
+/* ── Settings modal (sidebar tabs) ────────────────────────────────────── */
+.settings-modal { display: flex; width: min(100%, 860px); height: min(640px, 82vh); background: var(--surface); border: 1px solid var(--border-2); border-radius: 14px; box-shadow: 0 30px 80px rgba(0, 0, 0, .6); overflow: hidden }
+.set-nav { width: 210px; flex: none; padding: 16px 12px; border-right: 1px solid var(--border); background: var(--bg); display: flex; flex-direction: column }
+.set-title { margin: 6px 10px 16px; color: var(--head); font: 600 15px "Hanken Grotesk", Inter, sans-serif }
+.set-catitem { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 9px; margin: 2px 0; border: 0; background: transparent; color: var(--text-dim); font-size: 13.5px; text-align: left }
+.set-catitem:hover { background: var(--surface-2) }
+.set-catitem.active { background: var(--accent-soft); color: var(--accent); font-weight: 600 }
+.set-icon { width: 16px; text-align: center }
+.set-navfoot { margin-top: auto; padding: 10px; color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace }
+.set-body { flex: 1; min-width: 0; display: flex; flex-direction: column }
+.set-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--border) }
+.set-head h2 { margin: 0; color: var(--head); font: 600 17px "Hanken Grotesk", Inter, sans-serif }
+.set-content { flex: 1; min-height: 0; overflow: auto; padding: 6px 22px 22px }
+.set-section { margin: 18px 0 8px; color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase }
+.set-pack { margin: 12px 0 8px; color: var(--text-dim); font: 600 12px "Hanken Grotesk", Inter, sans-serif }
+.set-note { margin: 6px 0 0; color: var(--text-mut); font-size: 12.5px; line-height: 1.5 }
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border) }
+.set-row span { display: flex; flex-direction: column; gap: 3px }
+.set-row b { color: var(--text); font-size: 13.5px; font-weight: 500 }
+.set-row small { color: var(--text-mut); font-size: 12px }
+.set-tag { color: var(--green); font: 11px "JetBrains Mono", ui-monospace, monospace }
+.toggle { flex: none; width: 38px; height: 22px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border-2); position: relative; transition: background .15s }
+.toggle i { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--text-mut); transition: .15s }
+.toggle.on { background: var(--accent-soft); border-color: var(--accent-line) }
+.toggle.on i { left: 18px; background: var(--accent) }
+.select { flex: none; padding: 6px 12px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border-2); color: var(--text-dim); font: 12px "JetBrains Mono", ui-monospace, monospace }
+.theme-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px }
+.theme-tile { display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 12px; border: 1px solid; text-align: left }
+.theme-swatches { display: flex; gap: 5px }
+.theme-swatches i { width: 14px; height: 14px; border-radius: 50% }
+.theme-tile b { font-size: 13px }
+.theme-tile small { font: 10.5px "JetBrains Mono", ui-monospace, monospace }
+@media (max-width: 760px) { .theme-grid { grid-template-columns: repeat(2, 1fr) } .settings-modal { flex-direction: column; height: 86vh } .set-nav { width: 100%; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border) } }
+
+/* ── Compact density ──────────────────────────────────────────────────── */
+[data-density="compact"] .email-row { min-height: 0; padding: 7px 16px }
+[data-density="compact"] .snippet-line { display: none }
+[data-density="compact"] .navitem { padding: 6px 12px }
+[data-density="compact"] .thread-messages article { padding: 14px 0 }
+
 /* ── Sidebar (flat) ───────────────────────────────────────────────────── */
 .sidebar { border-right: 1px solid var(--border); background: var(--surface); padding: 16px 12px; font-size: 13.5px; overflow: auto }
 .account { display: grid; grid-template-columns: 34px 1fr 12px; gap: 10px; align-items: center; width: 100%; padding: 9px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--border-2); color: var(--text); text-align: left }

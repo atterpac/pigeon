@@ -11,10 +11,12 @@ import CommandLine from './CommandLine.vue'
 import Modeline from './Modeline.vue'
 import ComposeModal from '../overlays/ComposeModal.vue'
 import Cheatsheet from '../overlays/Cheatsheet.vue'
+import SettingsModal from '../overlays/SettingsModal.vue'
 
 const emit = defineEmits<{ (e: 'open-sandbox'): void }>()
 const s = useMailShell()
 const cheatsheetOpen = ref(false)
+const settingsOpen = ref(false)
 
 let countBuffer = ''
 let gPending = false
@@ -34,7 +36,7 @@ function handleGlobalKeydown(event: KeyboardEvent) {
 
   const key = event.key
   if (key === '?') { event.preventDefault(); cheatsheetOpen.value = !cheatsheetOpen.value; return }
-  if (key === 'Escape') { if (cheatsheetOpen.value) { cheatsheetOpen.value = false } else { onEscape() } resetPending(); return }
+  if (key === 'Escape') { if (settingsOpen.value) { settingsOpen.value = false } else if (cheatsheetOpen.value) { cheatsheetOpen.value = false } else { onEscape() } resetPending(); return }
 
   // Count prefix (1-9, then any digit).
   if (/[0-9]/.test(key) && !(key === '0' && !countBuffer)) { countBuffer += key; return }
@@ -80,6 +82,7 @@ function onEscape() {
       <button class="search-affordance" type="button" @click="s.openCommand('search')"><span>⌕</span> Search mail <kbd>⌘K</kbd></button>
       <div class="topbar-actions">
         <button class="sandbox-button" type="button" @click="cheatsheetOpen = true">? Keys</button>
+        <button class="sandbox-button" type="button" @click="settingsOpen = true">⚙ Settings</button>
         <button class="sandbox-button" type="button" @click="emit('open-sandbox')">Sandbox</button>
         <button class="primary-action" type="button" @click="s.compose()">Compose <kbd>c</kbd></button>
       </div>
@@ -93,6 +96,7 @@ function onEscape() {
 
     <ComposeModal v-if="s.composeOpen.value" />
     <Cheatsheet v-if="cheatsheetOpen" @close="cheatsheetOpen = false" />
+    <SettingsModal v-if="settingsOpen" @close="settingsOpen = false" />
 
     <div class="shell-foot">
       <CommandLine />
