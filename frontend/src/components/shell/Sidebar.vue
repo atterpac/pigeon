@@ -8,7 +8,7 @@ import { initials } from '../../mail/format'
 import type { Mailbox } from '../../mail/types'
 import type { ConfiguredAccount } from '../../onboarding/client'
 import AddAccountModal from '../overlays/AddAccountModal.vue'
-import { PhArchiveBox, PhCaretDown, PhCheck, PhEnvelope, PhEye, PhEyeSlash, PhNotePencil, PhPaperPlaneTilt, PhPencilSimple, PhPlus, PhStar, PhTag, PhTrash, PhTray, PhUserPlus, PhX } from '@phosphor-icons/vue'
+import { PhArchiveBox, PhCaretDown, PhCheck, PhEnvelope, PhEyeSlash, PhNotePencil, PhPaperPlaneTilt, PhPencilSimple, PhPlus, PhStar, PhTag, PhTrash, PhTray, PhUserPlus, PhX } from '@phosphor-icons/vue'
 
 const s = useMailShell()
 const settings = useSettings()
@@ -38,7 +38,6 @@ const showIcons = computed(() => settings.navLayout === 'icons')
 const showAccounts = computed(() => settings.navLayout === 'accounts')
 const canCrud = computed(() => !!s.client.value?.createMailbox)
 const visibleMailboxes = computed(() => s.mailboxes.value.filter((mailbox) => !settings.hiddenMailboxIds.includes(mailbox.id)))
-const hiddenMailboxes = computed(() => s.mailboxes.value.filter((mailbox) => settings.hiddenMailboxIds.includes(mailbox.id)))
 
 // Folder CRUD UI state (inline inputs — webview-friendly, no native dialogs).
 const creating = ref(false)
@@ -92,10 +91,6 @@ function hideMailbox(id: string) {
     if (fallback) void s.openMailbox(fallback.id)
   }
 }
-function showMailbox(id: string) {
-  settings.hiddenMailboxIds = settings.hiddenMailboxIds.filter((mailboxId) => mailboxId !== id)
-}
-
 function glyph(mailbox: Mailbox) {
   return (mailbox.name[0] ?? '•').toUpperCase()
 }
@@ -200,22 +195,6 @@ function openLabel(name: string) {
         <button type="submit" class="folder-mini" title="Create"><PhCheck :size="13" /></button>
       </form>
     </nav>
-
-    <template v-if="hiddenMailboxes.length">
-      <p v-if="showHeads" class="grouphead">Hidden</p>
-      <nav class="navgroup">
-        <div v-for="mailbox in hiddenMailboxes" :key="mailbox.id" class="navrow">
-          <button class="navitem muted" type="button" :title="`Show ${mailbox.name}`" @click="showMailbox(mailbox.id)">
-            <span v-if="showIcons" class="navicon"><component :is="mailboxIcon(mailbox)" :size="14" /></span>
-            <span v-else-if="settings.navLayout === 'rail'" class="navicon">{{ glyph(mailbox) }}</span>
-            <span class="navlabel">{{ mailbox.name }}</span>
-          </button>
-          <div class="navactions">
-            <button class="folder-mini" type="button" title="Show folder" @click="showMailbox(mailbox.id)"><PhEye :size="13" /></button>
-          </div>
-        </div>
-      </nav>
-    </template>
 
     <p v-if="showHeads" class="grouphead">Labels</p>
     <nav class="navgroup">
