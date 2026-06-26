@@ -1,5 +1,7 @@
 <script setup lang="ts">
 // `?` keybinding cheatsheet overlay.
+import { PhX } from '@phosphor-icons/vue'
+
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const groups: Array<{ title: string; keys: Array<[string, string]> }> = [
@@ -12,7 +14,7 @@ const groups: Array<{ title: string; keys: Array<[string, string]> }> = [
 <template>
   <div class="modal-backdrop" @click.self="emit('close')">
     <section class="cheatsheet">
-      <header><h2>Keybindings</h2><button class="modal-close" type="button" @click="emit('close')">? ✕</button></header>
+      <header><h2>Keybindings</h2><button class="modal-close" type="button" @click="emit('close')">? <PhX :size="12" /></button></header>
       <div class="cheat-grid">
         <div v-for="group in groups" :key="group.title" class="cheat-group">
           <h3>{{ group.title }}</h3>

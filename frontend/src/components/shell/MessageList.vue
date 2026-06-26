@@ -7,6 +7,7 @@ import { categoryTabs, useMailShell } from '../../composables/useMailShell'
 import { useSettings } from '../../composables/useSettings'
 import { formatDate, labelFor } from '../../mail/format'
 import type { Conversation } from '../../mail/types'
+import { PhMagnifyingGlass, PhStar } from '@phosphor-icons/vue'
 
 const s = useMailShell()
 const settings = useSettings()
@@ -35,7 +36,7 @@ function selectAndOpen(conversation: Conversation) {
     <header class="list-header">
       <p v-if="s.searchActive.value"><strong>{{ s.searchResults.value.length }}</strong> results</p>
       <p v-else><strong>{{ s.filteredConversations.value.length }}</strong> · {{ s.unreadCount.value }} unread</p>
-      <button class="searchbtn" type="button" @click="s.openCommand('search')">⌕</button>
+      <button class="searchbtn" type="button" @click="s.openCommand('search')"><PhMagnifyingGlass :size="14" /></button>
     </header>
 
     <nav v-if="!s.searchActive.value" class="category-tabs" aria-label="Inbox categories">
@@ -54,7 +55,7 @@ function selectAndOpen(conversation: Conversation) {
           @click="selectAndOpen(conversation)"
         >
           <span v-if="settings.relativenumber" class="relno" :class="{ cur: isCurrent(conversation) }">{{ rel(conversation) }}</span>
-          <button class="star" :class="{ active: conversation.starred }" type="button" @click.stop="s.toggleStar(conversation)" aria-label="Star"><svg viewBox="0 0 256 256"><path d="M128 24l31.5 63.8 70.4 10.2-50.9 49.7 12 70.1L128 184.6 65 217.8l12-70.1-50.9-49.7 70.4-10.2L128 24z" /></svg></button>
+          <button class="star" :class="{ active: conversation.starred }" type="button" @click.stop="s.toggleStar(conversation)" aria-label="Star"><PhStar :size="15" :weight="conversation.starred ? 'fill' : 'regular'" /></button>
           <div class="row-main">
             <div class="row-top"><strong>{{ conversation.from.name || conversation.from.addr }}</strong><time>{{ formatDate(conversation.lastAt) }}</time></div>
             <div class="subject"><span>{{ conversation.subject }}</span></div>
@@ -76,7 +77,7 @@ function selectAndOpen(conversation: Conversation) {
               @click="selectAndOpen(conversation)"
             >
               <span v-if="settings.relativenumber" class="relno" :class="{ cur: isCurrent(conversation) }">{{ rel(conversation) }}</span>
-              <button class="star" :class="{ active: conversation.starred }" type="button" @click.stop="s.toggleStar(conversation)" aria-label="Star"><svg viewBox="0 0 256 256"><path d="M128 24l31.5 63.8 70.4 10.2-50.9 49.7 12 70.1L128 184.6 65 217.8l12-70.1-50.9-49.7 70.4-10.2L128 24z" /></svg></button>
+              <button class="star" :class="{ active: conversation.starred }" type="button" @click.stop="s.toggleStar(conversation)" aria-label="Star"><PhStar :size="15" :weight="conversation.starred ? 'fill' : 'regular'" /></button>
               <div class="row-main">
                 <div class="row-top"><strong>{{ conversation.from.name || conversation.from.addr }}</strong><time>{{ formatDate(conversation.lastAt) }}</time></div>
                 <div class="subject"><span>{{ conversation.subject }}</span><em v-if="labelFor(conversation, s.labels.value)" :style="{ background: labelFor(conversation, s.labels.value)?.bg, color: labelFor(conversation, s.labels.value)?.fg }">{{ labelFor(conversation, s.labels.value)?.name }}</em></div>

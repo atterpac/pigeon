@@ -4,6 +4,7 @@
 // unit) out of App.vue — the caret math is fiddly, so it was not rewritten.
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { renderMarkdown } from '../../mail/format'
+import { PhPaperPlaneTilt, PhTextB, PhTextItalic, PhCode, PhLink, PhPaperclip } from '@phosphor-icons/vue'
 
 type EditorMode = 'INSERT' | 'NORMAL'
 
@@ -125,12 +126,12 @@ function onBlur() { editorFocused.value = false }
       <div v-if="preview" class="editor-preview" v-html="renderedPreview" />
     </div>
     <footer class="compose-toolbar">
-      <button type="button" class="primary-action" @click="emit('send')">Send <kbd>⌘↵</kbd></button>
-      <button type="button" class="format-button" @mousedown.prevent @click="applyFormat('bold')">B</button>
-      <button type="button" class="format-button italic" @mousedown.prevent @click="applyFormat('italic')">I</button>
-      <button type="button" class="format-button" @mousedown.prevent @click="applyFormat('code')">&lt;/&gt;</button>
-      <button type="button" class="format-button" @mousedown.prevent @click="applyFormat('link')">Link</button>
-      <button type="button" class="ghost-button" @click="emit('attach')">Attach</button>
+      <button type="button" class="primary-action" @click="emit('send')"><PhPaperPlaneTilt :size="14" /> Send <kbd>⌘↵</kbd></button>
+      <button type="button" class="format-button" @mousedown.prevent @click="applyFormat('bold')" aria-label="Bold"><PhTextB :size="15" /></button>
+      <button type="button" class="format-button" @mousedown.prevent @click="applyFormat('italic')" aria-label="Italic"><PhTextItalic :size="15" /></button>
+      <button type="button" class="format-button" @mousedown.prevent @click="applyFormat('code')" aria-label="Code"><PhCode :size="15" /></button>
+      <button type="button" class="format-button" @mousedown.prevent @click="applyFormat('link')" aria-label="Link"><PhLink :size="15" /></button>
+      <button type="button" class="ghost-button" @click="emit('attach')"><PhPaperclip :size="14" /> Attach</button>
       <span class="editor-status"><b>{{ editorMode }}</b> · {{ status }}</span>
       <button v-if="showDiscard" type="button" class="ghost-button" @click="emit('discard')">Discard</button>
     </footer>

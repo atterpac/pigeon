@@ -4,6 +4,7 @@ import { useMailShell } from './composables/useMailShell'
 import OnboardingView from './onboarding/OnboardingView.vue'
 import MailShell from './components/shell/MailShell.vue'
 import Sandbox from './sandbox/Sandbox.vue'
+import { PhArrowLeft } from '@phosphor-icons/vue'
 
 const s = useMailShell()
 const sandboxOpen = ref(false)
@@ -21,7 +22,7 @@ onMounted(() => { void s.initializeApp() })
   </main>
 
   <main v-else-if="sandboxOpen" class="sandbox-shell">
-    <button class="sandbox-exit" type="button" @click="sandboxOpen = false">← exit sandbox</button>
+    <button class="sandbox-exit" type="button" @click="sandboxOpen = false"><PhArrowLeft :size="12" /> exit sandbox</button>
     <Sandbox />
   </main>
 

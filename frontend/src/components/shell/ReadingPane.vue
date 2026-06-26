@@ -5,6 +5,7 @@ import { useMailShell } from '../../composables/useMailShell'
 import { useSettings } from '../../composables/useSettings'
 import { formatDate, initials, participantLine, renderEmailHtml } from '../../mail/format'
 import MarkdownEditor from '../editor/MarkdownEditor.vue'
+import { PhStar, PhArchive, PhClock, PhEnvelopeOpen, PhCaretUp, PhCaretDown } from '@phosphor-icons/vue'
 
 const s = useMailShell()
 const settings = useSettings()
@@ -17,10 +18,10 @@ const settings = useSettings()
       <header class="thread-header">
         <div class="thread-title"><h1>{{ s.selectedThread.value.subject }}</h1><p>{{ s.selectedThread.value.messageCount }} messages · {{ participantLine(s.selectedThread.value) }}</p></div>
         <div class="thread-actions">
-          <button class="ghost-button" type="button" @click="s.toggleStar()">Star</button>
-          <button class="ghost-button" type="button" @click="s.archiveThread()">Archive <kbd>e</kbd></button>
-          <button class="ghost-button" type="button" @click="s.snoozeThread()">Snooze <kbd>s</kbd></button>
-          <button class="ghost-button" type="button" @click="s.toggleRead()">Unread <kbd>u</kbd></button>
+          <button class="ghost-button" type="button" @click="s.toggleStar()"><PhStar :size="14" :weight="s.selectedThread.value?.starred ? 'fill' : 'regular'" /> Star</button>
+          <button class="ghost-button" type="button" @click="s.archiveThread()"><PhArchive :size="14" /> Archive <kbd>e</kbd></button>
+          <button class="ghost-button" type="button" @click="s.snoozeThread()"><PhClock :size="14" /> Snooze <kbd>s</kbd></button>
+          <button class="ghost-button" type="button" @click="s.toggleRead()"><PhEnvelopeOpen :size="14" /> Unread <kbd>u</kbd></button>
         </div>
       </header>
       <div class="thread-messages">
@@ -37,7 +38,7 @@ const settings = useSettings()
         </article>
       </div>
       <footer class="reply-panel" :class="{ expanded: s.replyExpanded.value }">
-        <button class="reply-expand-toggle" type="button" @click="s.replyExpanded.value = !s.replyExpanded.value">{{ s.replyExpanded.value ? '⌄' : '⌃' }}</button>
+        <button class="reply-expand-toggle" type="button" @click="s.replyExpanded.value = !s.replyExpanded.value"><PhCaretDown v-if="s.replyExpanded.value" :size="14" /><PhCaretUp v-else :size="14" /></button>
         <div class="reply-tabs">
           <button :class="{ active: s.replyMode.value === 'reply' }" type="button" @click="s.prepareReply('reply')">Reply</button>
           <button :class="{ active: s.replyMode.value === 'replyAll' }" type="button" @click="s.prepareReply('replyAll')">Reply all</button>

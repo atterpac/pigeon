@@ -9,18 +9,19 @@
 import { computed, ref } from 'vue'
 import { useSettings } from '../../composables/useSettings'
 import SettingsContent from './SettingsContent.vue'
+import { PhSlidersHorizontal, PhEnvelope, PhPalette, PhSquaresFour, PhKeyboard, PhBell, PhLock, PhX } from '@phosphor-icons/vue'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 const settings = useSettings()
 
 const categories = [
-  { id: 'general', label: 'General', icon: '⚙' },
-  { id: 'accounts', label: 'Accounts', icon: '✉' },
-  { id: 'appearance', label: 'Appearance', icon: '◐' },
-  { id: 'layout', label: 'Layout & Views', icon: '▦' },
-  { id: 'keybindings', label: 'Keybindings', icon: '⌘' },
-  { id: 'notifications', label: 'Notifications', icon: '🔔' },
-  { id: 'privacy', label: 'Privacy', icon: '🔒' },
+  { id: 'general', label: 'General', icon: PhSlidersHorizontal },
+  { id: 'accounts', label: 'Accounts', icon: PhEnvelope },
+  { id: 'appearance', label: 'Appearance', icon: PhPalette },
+  { id: 'layout', label: 'Layout & Views', icon: PhSquaresFour },
+  { id: 'keybindings', label: 'Keybindings', icon: PhKeyboard },
+  { id: 'notifications', label: 'Notifications', icon: PhBell },
+  { id: 'privacy', label: 'Privacy', icon: PhLock },
 ]
 const active = ref('appearance')
 const filter = ref('')
@@ -48,7 +49,7 @@ const activeLabel = computed(() => categories.find((c) => c.id === active.value)
           type="button"
           @click="active = category.id"
         >
-          <span class="set-icon">{{ category.icon }}</span><span class="set-catlabel">{{ category.label }}</span>
+          <component :is="category.icon" class="set-icon" :size="16" /><span class="set-catlabel">{{ category.label }}</span>
         </button>
         <span class="set-navfoot">mail · local</span>
       </nav>
@@ -56,13 +57,13 @@ const activeLabel = computed(() => categories.find((c) => c.id === active.value)
       <div class="set-body">
         <header class="set-head">
           <h2>{{ isScroll ? 'Settings' : activeLabel }}</h2>
-          <button class="modal-close" type="button" @click="emit('close')">esc ✕</button>
+          <button class="modal-close" type="button" @click="emit('close')">esc <PhX :size="12" /></button>
         </header>
 
         <div class="set-content">
           <template v-if="isScroll">
             <section v-for="category in categories" :key="category.id" class="set-scroll-cat">
-              <p class="set-scroll-head">{{ category.icon }} {{ category.label }}</p>
+              <p class="set-scroll-head"><component :is="category.icon" :size="16" /> {{ category.label }}</p>
               <SettingsContent :category="category.id" />
             </section>
           </template>

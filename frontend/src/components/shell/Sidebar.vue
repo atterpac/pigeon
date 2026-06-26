@@ -6,6 +6,7 @@ import { useMailShell } from '../../composables/useMailShell'
 import { useSettings } from '../../composables/useSettings'
 import { initials } from '../../mail/format'
 import type { Mailbox } from '../../mail/types'
+import { PhCaretDown, PhNotePencil } from '@phosphor-icons/vue'
 
 const s = useMailShell()
 const settings = useSettings()
@@ -32,7 +33,7 @@ function openLabel(name: string) {
         <b>{{ s.account.value?.name || 'Account' }}</b>
         <small>{{ s.account.value?.email }}</small>
       </span>
-      <span class="chev">⌄</span>
+      <PhCaretDown class="chev" :size="12" />
     </button>
 
     <template v-if="showAccounts && s.configuredAccounts.value.length > 1">
@@ -45,7 +46,7 @@ function openLabel(name: string) {
       </nav>
     </template>
 
-    <button class="composebtn" type="button" @click="s.compose()"><span class="navlabel">Compose</span> <kbd>c</kbd></button>
+    <button class="composebtn" type="button" @click="s.compose()"><PhNotePencil :size="15" /><span class="navlabel">Compose</span> <kbd>c</kbd></button>
 
     <p v-if="showHeads" class="grouphead">Folders</p>
     <nav class="navgroup">

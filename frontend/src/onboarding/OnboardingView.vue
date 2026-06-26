@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Account-setup phase, extracted from App.vue. Re-tokened, otherwise unchanged.
 import { useMailShell } from '../composables/useMailShell'
+import { PhArrowRight } from '@phosphor-icons/vue'
 
 const emit = defineEmits<{ (e: 'open-sandbox'): void }>()
 const s = useMailShell()
@@ -53,7 +54,7 @@ const s = useMailShell()
           </button>
           <span>{{ s.configuredAccounts.value.length }} configured</span>
         </footer>
-        <button type="button" class="sandbox-link" @click="emit('open-sandbox')">Open sandbox →</button>
+        <button type="button" class="sandbox-link" @click="emit('open-sandbox')">Open sandbox <PhArrowRight :size="12" /></button>
       </form>
     </section>
   </main>

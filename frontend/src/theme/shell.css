@@ -6,9 +6,10 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: "Hanke
 button, input, textarea { font: inherit }
 button { cursor: pointer }
 kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace }
-.primary-action { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 9px; padding: 9px 16px; font-size: 13px; font-weight: 600 }
-.ghost-button, .format-button { color: var(--text-dim); background: transparent; border: 1px solid var(--border-2); border-radius: 7px; padding: 6px 11px; font: 11px "JetBrains Mono", ui-monospace, monospace }
+.primary-action { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 9px; padding: 9px 16px; font-size: 13px; font-weight: 600 }
+.ghost-button, .format-button { display: inline-flex; align-items: center; gap: 5px; color: var(--text-dim); background: transparent; border: 1px solid var(--border-2); border-radius: 7px; padding: 6px 11px; font: 11px "JetBrains Mono", ui-monospace, monospace }
 .ghost-button:hover, .format-button:hover { background: var(--surface-2) }
+.sandbox-button, .modal-close, .searchbtn, .attachment-row button { display: inline-flex; align-items: center; gap: 6px }
 
 /* ── Onboarding / starting ────────────────────────────────────────────── */
 .setup-shell { width: 100vw; min-height: 100vh; display: grid; place-items: center; padding: 28px; background: var(--bg) }
@@ -235,9 +236,8 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .subject em { flex: none; font-style: normal; font: 10px "JetBrains Mono", ui-monospace, monospace; border-radius: 6px; padding: 2px 7px }
 .snippet-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-mut); font-size: 12.5px }
 .star { display: grid; place-items: center; width: 20px; height: 20px; border: 0; background: transparent; color: var(--text-mut); margin-top: 1px }
-.star svg { width: 14px; height: 14px; fill: transparent; stroke: currentColor; stroke-width: 18px }
+.star svg { display: block }
 .star.active { color: var(--star) }
-.star.active svg { fill: currentColor }
 
 /* ── Reading pane ─────────────────────────────────────────────────────── */
 .reading-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; background: var(--read-bg) }

@@ -13,6 +13,7 @@ import Modeline from './Modeline.vue'
 import ComposeModal from '../overlays/ComposeModal.vue'
 import Cheatsheet from '../overlays/Cheatsheet.vue'
 import SettingsModal from '../overlays/SettingsModal.vue'
+import { PhMagnifyingGlass, PhKeyboard, PhGearSix, PhFlask, PhNotePencil } from '@phosphor-icons/vue'
 
 const emit = defineEmits<{ (e: 'open-sandbox'): void }>()
 const s = useMailShell()
@@ -81,12 +82,12 @@ function onEscape() {
         <span class="traffic" aria-hidden="true"><span /><span /><span /></span>
         <span class="path">~/mail/<b>{{ s.mode.value.toLowerCase() }}</b></span>
       </div>
-      <button class="search-affordance" type="button" @click="s.openCommand('search')"><span>⌕</span> Search mail <kbd>⌘K</kbd></button>
+      <button class="search-affordance" type="button" @click="s.openCommand('search')"><PhMagnifyingGlass :size="15" /> Search mail <kbd>⌘K</kbd></button>
       <div class="topbar-actions">
-        <button class="sandbox-button" type="button" @click="cheatsheetOpen = true">? Keys</button>
-        <button class="sandbox-button" type="button" @click="settingsOpen = true">⚙ Settings</button>
-        <button class="sandbox-button" type="button" @click="emit('open-sandbox')">Sandbox</button>
-        <button class="primary-action" type="button" @click="s.compose()">Compose <kbd>c</kbd></button>
+        <button class="sandbox-button" type="button" @click="cheatsheetOpen = true"><PhKeyboard :size="15" /> Keys</button>
+        <button class="sandbox-button" type="button" @click="settingsOpen = true"><PhGearSix :size="15" /> Settings</button>
+        <button class="sandbox-button" type="button" @click="emit('open-sandbox')"><PhFlask :size="15" /> Sandbox</button>
+        <button class="primary-action" type="button" @click="s.compose()"><PhNotePencil :size="15" /> Compose <kbd>c</kbd></button>
       </div>
     </header>
 
