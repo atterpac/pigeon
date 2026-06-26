@@ -204,9 +204,29 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .navitem:hover { background: var(--surface-2) }
 .navitem .navlabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .navitem.active { background: var(--accent-soft); color: var(--accent); font-weight: 600 }
+.navitem.muted { color: var(--text-mut); font-style: italic }
 .dot { flex: none; border-radius: 20px; padding: 1px 8px; background: var(--accent); color: var(--accent-ink); font: 11.5px "JetBrains Mono", ui-monospace, monospace }
 .dot.soft { background: var(--border); color: var(--text-dim) }
 .swatch { width: 8px; height: 8px; border-radius: 50%; flex: none }
+
+/* Account switcher */
+.account-wrap { position: relative }
+.menu-scrim { position: fixed; inset: 0; z-index: 40 }
+.account-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 41; padding: 6px; border: 1px solid var(--border-2); border-radius: 12px; background: var(--surface); box-shadow: 0 20px 50px rgba(0, 0, 0, .5) }
+.menu-head { margin: 4px 8px 6px; color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase }
+.menu-row { display: flex; align-items: center; gap: 4px }
+.menu-item { flex: 1; min-width: 0; display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 10px; padding: 7px 8px; border: 0; border-radius: 9px; background: transparent; color: var(--text); text-align: left }
+.menu-item:hover { background: var(--surface-2) }
+.menu-item.active { background: var(--accent-soft) }
+.menu-item .avatar.sm { width: 28px; height: 28px; font-size: 11px }
+.menu-item .acctcol { min-width: 0; display: grid; gap: 1px }
+.menu-item .acctcol b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.menu-item .acctcol small { color: var(--text-mut); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.menu-check { color: var(--accent) }
+.menu-add { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 4px; padding: 9px 10px; border: 0; border-top: 1px solid var(--border); background: transparent; color: var(--accent); font: 600 13px "Hanken Grotesk", Inter, sans-serif }
+.menu-add:hover { background: var(--accent-soft) }
+.account-modal { width: min(100%, 440px); background: var(--surface); border: 1px solid var(--border-2); border-radius: 14px; box-shadow: 0 30px 80px rgba(0, 0, 0, .6); overflow: hidden }
+.account-modal .setup-form { padding: 20px 22px }
 
 /* Folder CRUD */
 .grouphead-row { display: flex; align-items: center; justify-content: space-between }

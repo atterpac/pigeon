@@ -110,12 +110,12 @@ function createMailShell() {
     await refreshShell()
     appPhase.value = 'mail'
   }
-  async function submitOnboarding() {
+  async function submitOnboarding(): Promise<boolean> {
     setupError.value = ''
     const email = setup.value.email.trim()
-    if (!email) { setupError.value = 'Email address is required.'; return }
+    if (!email) { setupError.value = 'Email address is required.'; return false }
     if (setup.value.method === 'appPassword' && !setup.value.appPassword.trim()) {
-      setupError.value = 'App password is required.'; return
+      setupError.value = 'App password is required.'; return false
     }
     setupBusy.value = true
     setupStatus.value = setup.value.method === 'google' ? 'waiting for Google authorization' : 'verifying account'
@@ -124,11 +124,34 @@ function createMailShell() {
       configuredAccounts.value = [added, ...configuredAccounts.value.filter((item) => item.id !== added.id)]
       setup.value.appPassword = ''
       await bootMailbox(added)
+      return true
     } catch (error) {
       setupError.value = errorMessage(error)
       setupStatus.value = 'setup did not finish'
+      return false
     } finally {
       setupBusy.value = false
+    }
+  }
+  // Clears the setup form before re-using it to add another account mid-session.
+  function resetSetup() {
+    setup.value = { method: 'google', email: '', displayName: '', appPassword: '' }
+    setupError.value = ''
+    setupStatus.value = ''
+  }
+  // RemoveAccount forgets an account (credentials + local store via the backend)
+  // and re-homes the active view if the current account was removed.
+  async function removeAccount(id: string) {
+    await onboarding.removeAccount(id)
+    configuredAccounts.value = await onboarding.listAccounts()
+    if (account.value?.id !== id) return
+    if (configuredAccounts.value.length) {
+      await bootMailbox(configuredAccounts.value[0])
+    } else {
+      client.value = null
+      account.value = null
+      appPhase.value = 'onboarding'
+      setupStatus.value = 'account setup required'
     }
   }
   function accountFromConfigured(configuredAccount: ConfiguredAccount): Account {
@@ -421,7 +444,7 @@ function createMailShell() {
     draft, recipientInput, setup, setupStatus, setupError, setupBusy,
     filteredConversations, activeList, selectedConversation, unreadCount,
     todayConversations, earlierConversations, categoryCounts, mode, statusHints,
-    initializeApp, bootMailbox, submitOnboarding, refreshShell, openMailbox, warmMailbox,
+    initializeApp, bootMailbox, submitOnboarding, resetSetup, removeAccount, refreshShell, openMailbox, warmMailbox,
     selectCategory, createMailbox, renameMailbox, deleteMailbox,
     openThread, prepareReply, archiveThread, snoozeThread, toggleStar, toggleRead,
     compose, sendDraft, discardDraft, materializeRecipients, queueSave, runSearch, openSearch, closeSearch,
