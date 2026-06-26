@@ -1,6 +1,6 @@
-import { createMockMailClient } from './mockClient'
+import { createWailsMailClient } from './wailsClient'
 import type { MailClient } from './types'
 
-export async function createMailClient(): Promise<MailClient> {
-  return createMockMailClient()
+export async function createMailClient(accountId?: string): Promise<MailClient> {
+  return createWailsMailClient(accountId)
 }

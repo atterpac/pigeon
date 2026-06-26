@@ -2,6 +2,7 @@ export type Address = { name: string; addr: string }
 export type Account = { id: string; email: string; name: string }
 export type Mailbox = { id: string; name: string; role?: string; unread: number; total: number }
 export type Label = { id: string; name: string; count: number; swatch: string; bg: string; fg: string }
+export type Category = 'primary' | 'promotions' | 'updates' | 'social' | 'forums'
 export type Conversation = {
   id: string
   accountId: string
@@ -9,6 +10,7 @@ export type Conversation = {
   labelIds: string[]
   subject: string
   snippet: string
+  category: Category
   lastAt: string
   from: Address
   participants: Address[]
@@ -27,6 +29,7 @@ export type ThreadMessage = {
   date: string
   snippet: string
   body: string[]
+  html?: string
   unread: boolean
   expanded: boolean
   rfcMessageId?: string
@@ -53,6 +56,8 @@ export type MailClient = {
   listMailboxes(): Promise<Mailbox[]>
   listLabels(): Promise<Label[]>
   listConversations(mailboxId: string): Promise<Conversation[]>
+  preloadMailboxBodies?(mailboxId: string, limit?: number): Promise<number>
+  reclassifyMailbox?(mailboxId: string, limit?: number): Promise<number>
   searchConversations(query: string): Promise<Conversation[]>
   getThread(threadId: string): Promise<Thread>
   archiveThread(threadId: string): Promise<void>

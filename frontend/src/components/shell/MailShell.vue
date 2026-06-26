@@ -4,6 +4,7 @@
 // including vim motions (counts, gg/G, dd) and the `?` cheatsheet.
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useMailShell } from '../../composables/useMailShell'
+import { useSettings } from '../../composables/useSettings'
 import Sidebar from './Sidebar.vue'
 import MessageList from './MessageList.vue'
 import ReadingPane from './ReadingPane.vue'
@@ -15,6 +16,7 @@ import SettingsModal from '../overlays/SettingsModal.vue'
 
 const emit = defineEmits<{ (e: 'open-sandbox'): void }>()
 const s = useMailShell()
+const settings = useSettings()
 const cheatsheetOpen = ref(false)
 const settingsOpen = ref(false)
 
@@ -88,7 +90,7 @@ function onEscape() {
       </div>
     </header>
 
-    <div class="body-shell">
+    <div class="body-shell" :class="{ rail: settings.navLayout === 'rail' }">
       <Sidebar />
       <MessageList />
       <ReadingPane />

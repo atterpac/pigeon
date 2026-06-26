@@ -20,12 +20,12 @@ const labels: Label[] = [
 
 let conversations: Conversation[] = [
   row('t-rate-limit', 'Marina Chen', 'marina@example.com', 'Re: API rate limiting design', 'Looks good - one concern about burst handling...', '2026-06-25T09:24:00', ['team'], true, false, 3),
-  row('t-github', 'GitHub', 'noreply@github.com', '[atterpac/email] CI failed', 'Type-check failed on generated bindings', '2026-06-25T08:40:00', ['alerts'], true, false, 1, true),
-  row('t-sentry', 'Sentry', 'alerts@sentry.io', 'New issue in mail bridge', 'Cannot resolve @wailsio/runtime in frontend build', '2026-06-25T08:15:00', ['alerts'], true, false, 1, true),
-  row('t-npm', 'npm', 'npm@npmjs.com', 'Security advisory: lodash', 'High severity - upgrade to 4.17.21', '2026-06-24T11:05:00', ['alerts'], false),
-  row('t-stripe', 'Stripe', 'receipts@stripe.com', 'Payment received - $2,400.00', 'Invoice INV-2043 paid by Acme Inc', '2026-06-24T09:31:00', ['receipts'], false, true),
-  row('t-aws', 'AWS', 'no-reply@amazon.com', 'Your June cost estimate', '$1,847.22 - 12% above last month', '2026-06-22T13:15:00', ['receipts'], false),
-  row('t-tldr', 'TLDR', 'newsletter@tldr.dev', 'Bun 2.0, Postgres 17, and more', 'Top dev news in 5 minutes', '2026-06-22T07:02:00', ['reads'], false),
+  row('t-github', 'GitHub', 'noreply@github.com', '[atterpac/email] CI failed', 'Type-check failed on generated bindings', '2026-06-25T08:40:00', ['alerts'], true, false, 1, true, 'updates'),
+  row('t-sentry', 'Sentry', 'alerts@sentry.io', 'New issue in mail bridge', 'Cannot resolve @wailsio/runtime in frontend build', '2026-06-25T08:15:00', ['alerts'], true, false, 1, true, 'updates'),
+  row('t-npm', 'npm', 'npm@npmjs.com', 'Security advisory: lodash', 'High severity - upgrade to 4.17.21', '2026-06-24T11:05:00', ['alerts'], false, false, 1, false, 'updates'),
+  row('t-stripe', 'Stripe', 'receipts@stripe.com', 'Payment received - $2,400.00', 'Invoice INV-2043 paid by Acme Inc', '2026-06-24T09:31:00', ['receipts'], false, true, 1, false, 'updates'),
+  row('t-aws', 'AWS', 'no-reply@amazon.com', 'Your June cost estimate', '$1,847.22 - 12% above last month', '2026-06-22T13:15:00', ['receipts'], false, false, 1, false, 'updates'),
+  row('t-tldr', 'TLDR', 'newsletter@tldr.dev', 'Bun 2.0, Postgres 17, and more', 'Top dev news in 5 minutes', '2026-06-22T07:02:00', ['reads'], false, false, 1, false, 'promotions'),
 ]
 
 const threads: Record<string, ThreadMessage[]> = {
@@ -44,6 +44,8 @@ export function createMockMailClient(): MailClient {
     async listMailboxes() { return refreshMailboxes() },
     async listLabels() { return labels.map((label) => ({ ...label, count: conversations.filter((c) => c.labelIds.includes(label.id)).length })) },
     async listConversations(mailboxId) { return sort(conversations.filter((c) => c.mailboxIds.includes(mailboxId))) },
+    async preloadMailboxBodies() { return 0 },
+    async reclassifyMailbox() { return 0 },
     async searchConversations(query) { return sort(conversations.filter((c) => matches(c, query))) },
     async getThread(threadId) {
       const conversation = get(threadId)
@@ -61,9 +63,9 @@ export function createMockMailClient(): MailClient {
   }
 }
 
-function row(id: string, name: string, email: string, subject: string, snippet: string, lastAt: string, labelIds: string[], unread: boolean, hasAttachments = false, messageCount = 1, alert = false): Conversation {
+function row(id: string, name: string, email: string, subject: string, snippet: string, lastAt: string, labelIds: string[], unread: boolean, hasAttachments = false, messageCount = 1, alert = false, category: Conversation['category'] = 'primary'): Conversation {
   const from = a(name, email)
-  return { id, accountId: me.id, mailboxIds: ['INBOX'], labelIds, subject, snippet, lastAt, from, participants: [from, a(me.name, me.email)], unread, starred: false, hasAttachments, messageCount, alert }
+  return { id, accountId: me.id, mailboxIds: ['INBOX'], labelIds, subject, snippet, category, lastAt, from, participants: [from, a(me.name, me.email)], unread, starred: false, hasAttachments, messageCount, alert }
 }
 function msg(id: string, threadId: string, from: Address, date: string, body: string[]): ThreadMessage {
   return { id, threadId, from, to: [a(me.name, me.email)], cc: [], date, snippet: body[0] ?? '', body, unread: false, expanded: false, rfcMessageId: `<${id}@example.com>`, references: [] }

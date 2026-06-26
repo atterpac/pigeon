@@ -119,6 +119,65 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .theme-tile small { font: 10.5px "JetBrains Mono", ui-monospace, monospace }
 @media (max-width: 760px) { .theme-grid { grid-template-columns: repeat(2, 1fr) } .settings-modal { flex-direction: column; height: 86vh } .set-nav { width: 100%; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border) } }
 
+/* ── Compose surface presets (R2) ─────────────────────────────────────── */
+.modal-backdrop.no-dim { background: transparent; backdrop-filter: none; pointer-events: none }
+.modal-backdrop.no-dim > * { pointer-events: auto }
+.compose-minimal { place-items: center }
+.compose-minimal .compose-card { width: min(100%, 520px) }
+.compose-fullscreen { padding: 0; place-items: stretch }
+.compose-fullscreen .compose-card { width: 100%; height: 100vh; border: 0; border-radius: 0; box-shadow: none }
+.compose-docked { place-items: end end; padding: 0 }
+.compose-docked .compose-card { width: min(100%, 460px); margin: 18px; max-height: 84vh }
+.compose-side { place-items: stretch end; padding: 0 }
+.compose-side .compose-card { width: min(100%, 560px); height: 100vh; border-radius: 0; border-left: 1px solid var(--border-2) }
+.compose-split { place-items: stretch end; padding: 0 }
+.compose-split .compose-card { width: min(100%, calc(100vw - 248px - 384px)); height: 100vh; border-radius: 0; border-left: 1px solid var(--border-2) }
+
+/* ── Sidebar style presets (R2) ───────────────────────────────────────── */
+.navicon { flex: none; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; background: var(--surface-2); color: var(--text-mut); font: 10px "JetBrains Mono", ui-monospace, monospace }
+.sidebar-cards .navitem { background: var(--surface-2); border: 1px solid var(--border-2); margin: 3px 0 }
+.sidebar-cards .navitem.active { background: var(--accent-soft); border-color: var(--accent-line) }
+.sidebar-compact .navitem { padding: 5px 10px; font-size: 12.5px; border-radius: 7px }
+.sidebar-compact .account { padding: 6px }
+.sidebar-compact .grouphead { margin: 10px 12px 4px }
+.sidebar-outline { background: var(--bg) }
+.sidebar-outline .navitem { border: 1px solid transparent }
+.sidebar-outline .navitem:hover { background: transparent; border-color: var(--border-2) }
+.sidebar-outline .navitem.active { background: transparent; border-color: var(--accent); color: var(--accent) }
+.sidebar-header .grouphead { font: 700 12px "Hanken Grotesk", Inter, sans-serif; color: var(--text-dim); letter-spacing: 0; text-transform: none }
+.sidebar-header .navitem { margin-left: 8px }
+.sidebar-airy .navitem { padding: 12px 13px; margin: 4px 0 }
+.sidebar-airy .grouphead { margin-top: 24px }
+.nav-counts .dot { background: var(--accent); color: var(--accent-ink) }
+
+/* nav-rail: narrow icon-only sidebar (column track set on .body-shell) */
+.body-shell.rail { grid-template-columns: 64px 384px minmax(0, 1fr) }
+.body-shell.rail .sidebar { padding: 12px 8px }
+.body-shell.rail .navlabel, .body-shell.rail .acctcol, .body-shell.rail .chev,
+.body-shell.rail .grouphead, .body-shell.rail .dot, .body-shell.rail .composebtn kbd { display: none }
+.body-shell.rail .account { grid-template-columns: 1fr; justify-items: center; padding: 6px }
+.body-shell.rail .navitem { justify-content: center; padding: 9px 0 }
+.body-shell.rail .composebtn { padding: 9px 0 }
+
+/* ── Settings layout presets (R2) ─────────────────────────────────────── */
+.set-catlabel { flex: 1; min-width: 0 }
+.set-search { display: block; width: 100%; margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border-2); color: var(--text); outline: 0; font: 13px "JetBrains Mono", ui-monospace, monospace }
+.set-scroll-cat { padding-bottom: 14px; margin-bottom: 6px; border-bottom: 1px solid var(--border) }
+.set-scroll-head { margin: 16px 0 8px; color: var(--head); font: 600 14px "Hanken Grotesk", Inter, sans-serif }
+.settings-fullscreen { width: 100%; height: 100%; border-radius: 0 }
+.settings-tabs, .settings-cards { flex-direction: column }
+.settings-tabs .set-nav { width: 100%; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 4px; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--border) }
+.settings-tabs .set-title, .settings-tabs .set-navfoot, .settings-cards .set-title, .settings-cards .set-navfoot { display: none }
+.settings-tabs .set-catitem { margin: 0 }
+.settings-cards .set-nav { width: 100%; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 14px; border-right: 0; border-bottom: 1px solid var(--border) }
+.settings-cards .set-catitem { flex-direction: column; align-items: flex-start; gap: 8px; background: var(--surface-2); border: 1px solid var(--border-2); padding: 14px }
+.settings-cards .set-catitem.active { border-color: var(--accent-line) }
+@media (max-width: 760px) { .settings-cards .set-nav { grid-template-columns: repeat(2, 1fr) } }
+
+/* ── Non-vim editor ───────────────────────────────────────────────────── */
+.md-editor.no-vim .editor-input { caret-color: var(--accent) }
+.md-editor.no-vim .editor-status b { opacity: .45 }
+
 /* ── Compact density ──────────────────────────────────────────────────── */
 [data-density="compact"] .email-row { min-height: 0; padding: 7px 16px }
 [data-density="compact"] .snippet-line { display: none }

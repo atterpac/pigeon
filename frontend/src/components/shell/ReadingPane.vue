@@ -2,10 +2,12 @@
 // Right pane (persistent): compose form when composing, otherwise the selected
 // thread with its reply panel, otherwise an empty placeholder.
 import { useMailShell } from '../../composables/useMailShell'
+import { useSettings } from '../../composables/useSettings'
 import { formatDate, initials, participantLine, renderEmailHtml } from '../../mail/format'
 import MarkdownEditor from '../editor/MarkdownEditor.vue'
 
 const s = useMailShell()
+const settings = useSettings()
 </script>
 
 <template>
@@ -48,6 +50,7 @@ const s = useMailShell()
           placeholder="Write your reply...  (⌘↵ to send)"
           :status="s.status.value"
           :reset-key="s.draft.value.id"
+          :vim="settings.vimMode"
           :expanded="s.replyExpanded.value"
           @send="s.sendDraft()"
           @attach="s.attachMock()"

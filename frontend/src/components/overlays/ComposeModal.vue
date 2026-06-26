@@ -2,14 +2,18 @@
 // Centered modal compose overlay (the default compose surface). Wraps the same
 // compose form + MarkdownEditor that previously lived in the reading pane.
 // ⌘↵ send and draft autosave are handled by the shell; esc/backdrop close here.
+import { computed } from 'vue'
 import { useMailShell } from '../../composables/useMailShell'
+import { useSettings } from '../../composables/useSettings'
 import MarkdownEditor from '../editor/MarkdownEditor.vue'
 
 const s = useMailShell()
+const settings = useSettings()
+const nonDim = computed(() => ['docked', 'side', 'split'].includes(settings.compose))
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="s.discardDraft()">
+  <div class="modal-backdrop" :class="[`compose-${settings.compose}`, { 'no-dim': nonDim }]" @click.self="s.discardDraft()">
     <form class="compose-card" @submit.prevent="s.sendDraft()">
       <header>
         <h1>New message</h1>
@@ -23,6 +27,7 @@ const s = useMailShell()
         placeholder="Write a message..."
         :status="s.status.value"
         :reset-key="s.draft.value.id"
+        :vim="settings.vimMode"
         :show-discard="true"
         :autofocus="true"
         @send="s.sendDraft()"
