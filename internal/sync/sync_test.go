@@ -23,6 +23,7 @@ type fakeProvider struct {
 
 	flagCalls   int // ApplyFlags invocations
 	labelCalls  int // ApplyLabels invocations
+	moveCalls   int // Move invocations
 	deleteCalls int // Delete invocations
 }
 
@@ -60,6 +61,7 @@ func (f *fakeProvider) ApplyLabels(context.Context, []model.MessageID, []model.L
 	return nil
 }
 func (f *fakeProvider) Move(context.Context, []model.MessageID, provider.MailboxRef) error {
+	f.moveCalls++
 	return nil
 }
 func (f *fakeProvider) CreateMailbox(context.Context, string) (model.Mailbox, error) {

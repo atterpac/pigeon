@@ -11,10 +11,11 @@ import { useSettings } from '../../composables/useSettings'
 import SettingsContent from './SettingsContent.vue'
 import { PhSlidersHorizontal, PhEnvelope, PhPalette, PhSquaresFour, PhKeyboard, PhBell, PhLock, PhX } from '@phosphor-icons/vue'
 
+const props = defineProps<{ devTools?: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
 const settings = useSettings()
 
-const categories = [
+const allCategories = [
   { id: 'general', label: 'General', icon: PhSlidersHorizontal },
   { id: 'accounts', label: 'Accounts', icon: PhEnvelope },
   { id: 'appearance', label: 'Appearance', icon: PhPalette },
@@ -25,13 +26,14 @@ const categories = [
 ]
 const active = ref('appearance')
 const filter = ref('')
+const categories = computed(() => props.devTools ? allCategories : allCategories.filter((category) => category.id !== 'layout'))
 
 const isScroll = computed(() => settings.settingsLayout === 'scroll')
 const visibleCategories = computed(() => {
   const q = filter.value.trim().toLowerCase()
-  return q ? categories.filter((c) => c.label.toLowerCase().includes(q)) : categories
+  return q ? categories.value.filter((c) => c.label.toLowerCase().includes(q)) : categories.value
 })
-const activeLabel = computed(() => categories.find((c) => c.id === active.value)?.label)
+const activeLabel = computed(() => categories.value.find((c) => c.id === active.value)?.label)
 </script>
 
 <template>

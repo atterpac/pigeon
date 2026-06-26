@@ -45,7 +45,13 @@ watch(() => props.resetKey, () => { preview.value = false })
 
 onMounted(() => { if (props.autofocus) nextTick(() => textareaRef.value?.focus()) })
 
-function focus() { textareaRef.value?.focus() }
+function focus() {
+  preview.value = false
+  nextTick(() => {
+    textareaRef.value?.focus()
+    updateCaret()
+  })
+}
 defineExpose({ focus })
 
 function handleEditorKeydown(event: KeyboardEvent) {
@@ -120,9 +126,9 @@ function onBlur() { editorFocused.value = false }
   <div class="md-editor" :class="[variant, { expanded, 'no-vim': !vim }]">
     <div class="editor-shell">
       <button class="preview-toggle" :class="{ active: preview }" type="button" @click="preview = !preview">{{ preview ? 'Edit' : 'Preview' }}</button>
-      <ol class="line-gutter" aria-hidden="true"><li v-for="line in lineNumbers" :key="line" :class="{ current: editorFocused && body && line === currentLine }">{{ line }}</li></ol>
+      <ol class="line-gutter" aria-hidden="true"><li v-for="line in lineNumbers" :key="line" :class="{ current: editorFocused && line === currentLine }">{{ line }}</li></ol>
       <textarea v-if="!preview" ref="textareaRef" v-model="body" class="editor-input" spellcheck="true" :placeholder="placeholder" wrap="off" @keydown="handleEditorKeydown" @focus="onFocus" @blur="onBlur" @click="updateCaret" @keyup="updateCaret" @select="updateCaret" @scroll="updateCaret" @input="updateCaret" />
-      <span v-if="vim && !preview && editorFocused && body.length" class="terminal-caret" :style="caretStyle" />
+      <span v-if="vim && !preview && editorFocused" class="terminal-caret" :style="caretStyle" />
       <div v-if="preview" class="editor-preview" v-html="renderedPreview" />
     </div>
     <footer class="compose-toolbar">

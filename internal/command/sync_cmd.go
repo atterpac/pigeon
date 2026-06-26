@@ -1,0 +1,144 @@
+package command
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+
+	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/email/internal/store"
+	synceng "github.com/atterpac/email/internal/sync"
+)
+
+// dbPath resolves the local store location (EMAIL_DB or the XDG data default).
+func dbPath() string {
+	if p := os.Getenv("EMAIL_DB"); p != "" {
+		return p
+	}
+	dir := os.Getenv("XDG_DATA_HOME")
+	if dir == "" {
+		home, _ := os.UserHomeDir()
+		dir = filepath.Join(home, ".local", "share")
+	}
+	return filepath.Join(dir, "email", "mail.db")
+}
+
+func openStore(ctx context.Context) (*store.Store, error) {
+	path := dbPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, err
+	}
+	return store.Open(ctx, path)
+}
+
+// cmdSync: register account + mailboxes, backfill N pages of history, then pull
+// new mail forward — all into the local SQLite store. Envelopes only.
+//
+//	email sync <account-email> [mailbox=INBOX] [pageSize=100] [pages=1]
+//	(pages=0 means backfill the entire mailbox)
+func cmdSync(ctx context.Context, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: email sync <account-email> [mailbox=INBOX] [pageSize=100] [pages=1]")
+	}
+	account := args[0]
+	mailbox := argOr(args, 1, "INBOX")
+	pageSize := atoiOr(argOr(args, 2, "100"), 100)
+	pages := atoiOr(argOr(args, 3, "1"), 1)
+
+	p, err := newProvider(ctx, account)
+	if err != nil {
+		return err
+	}
+	defer p.Close()
+
+	st, err := openStore(ctx)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	eng := synceng.New(st)
+
+	acct := model.Account{ID: model.AccountID(account), Kind: model.KindGmail, Email: account}
+	mbs, err := eng.RegisterAccount(ctx, p, acct)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("registered %s: %d mailboxes\n", account, len(mbs))
+
+	ref := provRef(mailbox)
+
+	if pages == 0 {
+		total, err := eng.BackfillAll(ctx, p, acct.ID, ref, pageSize, func(t int) {
+			fmt.Printf("\rbackfill %q: %d messages...", mailbox, t)
+		})
+		fmt.Println()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("backfill complete: %d messages\n", total)
+	} else {
+		written := 0
+		for i := 0; i < pages; i++ {
+			n, done, err := eng.BackfillPage(ctx, p, acct.ID, ref, pageSize)
+			if err != nil {
+				return err
+			}
+			written += n
+			fmt.Printf("backfill page %d: +%d (total %d)\n", i+1, n, written)
+			if done {
+				fmt.Println("backfill complete (reached oldest)")
+				break
+			}
+		}
+	}
+
+	// Pull anything newer than our forward cursor.
+	n, err := eng.SyncForward(ctx, p, acct.ID, ref)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("forward sync: +%d new\n", n)
+	return nil
+}
+
+// cmdSearch runs a local FTS query — no network.
+func cmdSearch(ctx context.Context, args []string) error {
+	if len(args) != 2 {
+		return fmt.Errorf("usage: email search <account-email> <query>")
+	}
+	st, err := openStore(ctx)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	msgs, err := st.Search(ctx, model.AccountID(args[0]), args[1], 25)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%d results for %q:\n", len(msgs), args[1])
+	for _, m := range msgs {
+		from := ""
+		if len(m.From) > 0 {
+			from = m.From[0].Addr
+		}
+		fmt.Printf("  %-30.30s  %-50.50s  %s\n", from, m.Subject, m.Date.Format("2006-01-02"))
+	}
+	return nil
+}
+
+func argOr(args []string, i int, def string) string {
+	if i < len(args) {
+		return args[i]
+	}
+	return def
+}
+
+func atoiOr(s string, def int) int {
+	if n, err := strconv.Atoi(s); err == nil {
+		return n
+	}
+	return def
+}

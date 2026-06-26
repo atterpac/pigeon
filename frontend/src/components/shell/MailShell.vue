@@ -2,7 +2,7 @@
 // Mail-phase container: topbar + triple-pane (Sidebar | MessageList |
 // ReadingPane) + command line + vim modeline. Owns global keyboard handling
 // including vim motions (counts, gg/G, dd) and the `?` cheatsheet.
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useMailShell } from '../../composables/useMailShell'
 import { useSettings } from '../../composables/useSettings'
 import Sidebar from './Sidebar.vue'
@@ -15,11 +15,15 @@ import Cheatsheet from '../overlays/Cheatsheet.vue'
 import SettingsModal from '../overlays/SettingsModal.vue'
 import { PhMagnifyingGlass, PhKeyboard, PhGearSix, PhFlask, PhNotePencil } from '@phosphor-icons/vue'
 
+defineProps<{ devTools?: boolean }>()
 const emit = defineEmits<{ (e: 'open-sandbox'): void }>()
 const s = useMailShell()
 const settings = useSettings()
 const cheatsheetOpen = ref(false)
 const settingsOpen = ref(false)
+const mobilePane = ref<'list' | 'thread'>('list')
+const readingPane = ref<InstanceType<typeof ReadingPane> | null>(null)
+const accountName = computed(() => s.account.value?.name || s.account.value?.email || 'Mail')
 
 let countBuffer = ''
 let gPending = false
@@ -45,61 +49,79 @@ function handleGlobalKeydown(event: KeyboardEvent) {
   if (/[0-9]/.test(key) && !(key === '0' && !countBuffer)) { countBuffer += key; return }
   const count = parseInt(countBuffer || '1', 10)
 
-  if (key === 'g') { if (gPending) { s.selectFirst(); resetPending() } else { gPending = true } return }
+  if (key === 'g') {
+    if (gPending) {
+      if (s.focusPane.value === 'thread') readingPane.value?.scrollThread('top')
+      else s.selectFirst()
+      resetPending()
+    } else { gPending = true }
+    return
+  }
   gPending = false
   if (key === 'd') { if (dPending) { void s.archiveSelected(); resetPending() } else { dPending = true } return }
   dPending = false
 
-  if (key === 'G') { s.selectLast() }
+  if (key === 'G') { if (s.focusPane.value === 'thread') readingPane.value?.scrollThread('bottom'); else s.selectLast() }
   else if (key === '/') { event.preventDefault(); s.openCommand('search') }
   else if (key === ':') { event.preventDefault(); s.openCommand('ex') }
   else if (key === 'c') s.compose()
-  else if (key === 'j' || key === 'ArrowDown') s.moveSelection(count)
-  else if (key === 'k' || key === 'ArrowUp') s.moveSelection(-count)
-  else if (key === 'Enter') void s.openThread()
+  else if (key === 'j' || key === 'ArrowDown') {
+    if (s.focusPane.value === 'thread') readingPane.value?.scrollThread(count)
+    else s.moveSelection(count)
+  }
+  else if (key === 'k' || key === 'ArrowUp') {
+    if (s.focusPane.value === 'thread') readingPane.value?.scrollThread(-count)
+    else s.moveSelection(-count)
+  }
+  else if (key === 'Tab' && s.selectedThread.value) { event.preventDefault(); s.focusPane.value === 'thread' ? s.focusList() : s.focusThread() }
+  else if (key === 'Enter') { void s.openThread(); mobilePane.value = 'thread' }
   else if (key === 'e') void s.archiveSelected()
   else if (key === 's') void s.snoozeThread()
   else if (key === '*') void s.toggleStar()
   else if (key === 'u') void s.toggleRead()
-  else if (s.selectedThread.value && key === 'r') s.prepareReply('reply')
-  else if (s.selectedThread.value && key === 'a') s.prepareReply('replyAll')
-  else if (s.selectedThread.value && key === 'f') s.prepareReply('forward')
+  else if (s.selectedThread.value && key === 'r') { s.openReply('reply'); readingPane.value?.focusReply() }
+  else if (s.selectedThread.value && key === 'a') { s.openReply('replyAll'); readingPane.value?.focusReply() }
+  else if (s.selectedThread.value && key === 'f') { s.openReply('forward'); readingPane.value?.focusReply() }
   resetPending()
 }
 function onEscape() {
   if (s.composeOpen.value) { void s.discardDraft(); return }
   if (s.command.value) { s.cancelCommand(); return }
   if (s.searchActive.value) { s.closeSearch(); return }
-  s.selectedThread.value = null
-  s.threadMessages.value = []
+  if (s.focusPane.value === 'thread' || s.selectedThread.value) {
+    s.closeThread()
+    mobilePane.value = 'list'
+  }
 }
+function showThread() { mobilePane.value = 'thread'; s.focusThread() }
+function showList() { mobilePane.value = 'list'; s.focusList() }
 </script>
 
 <template>
   <main class="mail-shell">
     <header class="topbar">
-      <div class="path-group">
-        <span class="traffic" aria-hidden="true"><span /><span /><span /></span>
-        <span class="path">~/mail/<b>{{ s.mode.value.toLowerCase() }}</b></span>
+      <div class="brand-group">
+        <span class="brand-mark">mail</span>
+        <span class="brand-copy"><b>{{ accountName }}</b><small>{{ s.mode.value.toLowerCase() }}</small></span>
       </div>
       <button class="search-affordance" type="button" @click="s.openCommand('search')"><PhMagnifyingGlass :size="15" /> Search mail <kbd>⌘K</kbd></button>
       <div class="topbar-actions">
         <button class="sandbox-button" type="button" @click="cheatsheetOpen = true"><PhKeyboard :size="15" /> Keys</button>
         <button class="sandbox-button" type="button" @click="settingsOpen = true"><PhGearSix :size="15" /> Settings</button>
-        <button class="sandbox-button" type="button" @click="emit('open-sandbox')"><PhFlask :size="15" /> Sandbox</button>
+        <button v-if="devTools" class="sandbox-button dev-only" type="button" @click="emit('open-sandbox')"><PhFlask :size="15" /> Sandbox</button>
         <button class="primary-action" type="button" @click="s.compose()"><PhNotePencil :size="15" /> Compose <kbd>c</kbd></button>
       </div>
     </header>
 
-    <div class="body-shell" :class="{ rail: settings.navLayout === 'rail' }">
+    <div class="body-shell" :class="{ rail: settings.navLayout === 'rail', 'mobile-list': mobilePane === 'list', 'mobile-thread': mobilePane === 'thread' }">
       <Sidebar />
-      <MessageList />
-      <ReadingPane />
+      <MessageList @open-thread="showThread" />
+      <ReadingPane ref="readingPane" @back-to-list="showList" />
     </div>
 
     <ComposeModal v-if="s.composeOpen.value" />
     <Cheatsheet v-if="cheatsheetOpen" @close="cheatsheetOpen = false" />
-    <SettingsModal v-if="settingsOpen" @close="settingsOpen = false" />
+    <SettingsModal v-if="settingsOpen" :dev-tools="devTools" @close="settingsOpen = false" />
 
     <div class="shell-foot">
       <CommandLine />

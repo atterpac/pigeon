@@ -402,9 +402,29 @@ func (c *Client) Star(ctx context.Context, acct Account, ids []MessageID, on boo
 // the Done-today metric.
 func (c *Client) Archive(ctx context.Context, acct Account, ids []MessageID) error {
 	_ = c.store.RecordDone(ctx, acct.ID, ids, time.Now())
+	if acct.Kind == KindIMAP {
+		if archive, ok := c.archiveMailbox(ctx, acct.ID); ok {
+			return c.mutate(ctx, acct, func(id AccountID) error {
+				return c.eng.Move(ctx, id, ids, archive)
+			})
+		}
+	}
 	return c.mutate(ctx, acct, func(id AccountID) error {
 		return c.eng.ApplyLabels(ctx, id, ids, nil, []LabelID{InboxLabel})
 	})
+}
+
+func (c *Client) archiveMailbox(ctx context.Context, acct AccountID) (LabelID, bool) {
+	mailboxes, err := c.store.Mailboxes(ctx, acct)
+	if err != nil {
+		return "", false
+	}
+	for _, mailbox := range mailboxes {
+		if mailbox.Role == RoleArchive {
+			return mailbox.ID, true
+		}
+	}
+	return "", false
 }
 
 // ApplyLabels adds and/or removes labels on messages.

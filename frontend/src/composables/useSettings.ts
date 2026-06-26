@@ -13,6 +13,7 @@ export interface Settings {
   density: 'comfortable' | 'compact'
   vimMode: boolean
   relativenumber: boolean
+  hiddenMailboxIds: string[]
 }
 
 const STORAGE_KEY = 'mail.settings'
@@ -20,11 +21,12 @@ const defaults: Settings = {
   theme: 'tokyonight-night',
   compose: 'centered',
   sidebarStyle: 'flat',
-  navLayout: 'grouped',
+  navLayout: 'icons',
   settingsLayout: 'sidebar',
-  density: 'comfortable',
+  density: 'compact',
   vimMode: true,
   relativenumber: true,
+  hiddenMailboxIds: [],
 }
 
 function load(): Partial<Settings> {

@@ -37,3 +37,29 @@
   --green:#587539;--orange:#b15c00;--red:#f52a65;--purple:#9854f1;--cyan:#007197;
   --star:#8c6c3e;--read-bg:#e9e9ed;--read-text:#3760bf;--grid:rgba(46,125,233,.05);
 }
+
+/*
+ * Depth layer — theme-agnostic. Themes only override the color contract above
+ * (see theme/themes.ts applyTheme), so elevation, motion, and the derived
+ * accent gradient live here and are built from the live tokens via color-mix,
+ * letting every theme inherit the same physical depth for free.
+ */
+:root {
+  /* elevation — three planes + an inset "well" for sunken scroll regions */
+  --shadow-1: 0 1px 2px rgba(0,0,0,.28);
+  --shadow-2: 0 6px 22px -6px rgba(0,0,0,.5);
+  --well: inset 0 1px 2px rgba(0,0,0,.22);
+  /* 1px top highlight that sells a raised, lit surface */
+  --top-hi: inset 0 1px 0 rgba(255,255,255,.14);
+  /* selection: focal glow distinct from the flat hover lift */
+  --sel-glow: 0 0 10px -1px var(--accent-line);
+  /* motion — one easing curve for every interactive transition */
+  --ease: 150ms cubic-bezier(.2,.6,.2,1);
+  --ease-fast: 90ms cubic-bezier(.2,.6,.2,1);
+  /* derived accent fill: subtle vertical gradient off the live --accent */
+  --accent-grad: linear-gradient(180deg, color-mix(in oklab, var(--accent) 88%, #fff), var(--accent));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --ease: 0ms; --ease-fast: 0ms; }
+}

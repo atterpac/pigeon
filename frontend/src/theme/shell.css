@@ -6,16 +6,18 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: "Hanke
 button, input, textarea { font: inherit }
 button { cursor: pointer }
 kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace }
-.primary-action { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 9px; padding: 9px 16px; font-size: 13px; font-weight: 600 }
-.ghost-button, .format-button { display: inline-flex; align-items: center; gap: 5px; color: var(--text-dim); background: transparent; border: 1px solid var(--border-2); border-radius: 7px; padding: 6px 11px; font: 11px "JetBrains Mono", ui-monospace, monospace }
-.ghost-button:hover, .format-button:hover { background: var(--surface-2) }
+.primary-action { display: inline-flex; align-items: center; gap: 6px; background: var(--accent-grad); color: var(--accent-ink); border: 0; border-radius: 9px; padding: 9px 16px; font-size: 13px; font-weight: 600; box-shadow: var(--top-hi), var(--shadow-1); transition: filter var(--ease), box-shadow var(--ease), transform var(--ease-fast) }
+.primary-action:hover { filter: brightness(1.06); box-shadow: var(--top-hi), var(--shadow-2) }
+.primary-action:active { transform: translateY(1px); box-shadow: var(--top-hi), var(--shadow-1) }
+.ghost-button, .format-button { display: inline-flex; align-items: center; gap: 5px; color: var(--text-dim); background: transparent; border: 1px solid var(--border-2); border-radius: 7px; padding: 6px 11px; font: 11px "JetBrains Mono", ui-monospace, monospace; transition: background var(--ease), color var(--ease), border-color var(--ease) }
+.ghost-button:hover, .format-button:hover { background: var(--surface-2); color: var(--text) }
 .sandbox-button, .modal-close, .searchbtn, .attachment-row button, .mobile-back { display: inline-flex; align-items: center; gap: 6px }
 
 /* ── Onboarding / starting ────────────────────────────────────────────── */
 .setup-shell { width: 100vw; min-height: 100vh; display: grid; place-items: center; padding: 28px; background: var(--bg) }
 .setup-panel { width: min(100%, 960px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 440px); gap: 44px; align-items: start; padding: 34px; border: 1px solid var(--border-2); border-radius: 8px; background: var(--surface) }
 .setup-panel.compact { display: block; width: min(100%, 420px) }
-.setup-mark { display: inline-grid; place-items: center; height: 28px; padding: 0 10px; border-radius: 6px; background: var(--accent); color: var(--accent-ink); font: 700 12px "JetBrains Mono", ui-monospace, monospace }
+.setup-mark { display: inline-grid; place-items: center; height: 28px; padding: 0 10px; border-radius: 6px; background: var(--accent-grad); color: var(--accent-ink); box-shadow: var(--top-hi), var(--shadow-1); font: 700 12px "JetBrains Mono", ui-monospace, monospace }
 .setup-copy h1, .setup-panel.compact h1 { margin: 26px 0 12px; color: var(--head); font-size: 32px; line-height: 1.1 }
 .setup-copy p, .setup-panel.compact p { margin: 0; color: var(--text-dim); font-size: 15px; line-height: 1.6 }
 .setup-copy dl { display: grid; gap: 16px; margin: 44px 0 0 }
@@ -42,9 +44,9 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 
 /* ── Shell frame ──────────────────────────────────────────────────────── */
 .mail-shell { width: 100vw; height: 100vh; display: grid; grid-template-rows: 54px 1fr auto; overflow: hidden; background: var(--bg) }
-.topbar { display: grid; grid-template-columns: minmax(248px, 1fr) minmax(360px, 620px) minmax(248px, 1fr); align-items: center; gap: 20px; padding: 0 18px; background: var(--surface); border-bottom: 1px solid var(--border) }
+.topbar { position: relative; z-index: 3; display: grid; grid-template-columns: minmax(248px, 1fr) minmax(360px, 620px) minmax(248px, 1fr); align-items: center; gap: 20px; padding: 0 18px; background: var(--surface); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-1) }
 .brand-group { display: flex; align-items: center; gap: 10px; min-width: 0 }
-.brand-mark { flex: none; display: inline-grid; place-items: center; height: 28px; padding: 0 10px; border-radius: 7px; background: var(--accent); color: var(--accent-ink); font: 700 12px "JetBrains Mono", ui-monospace, monospace }
+.brand-mark { flex: none; display: inline-grid; place-items: center; height: 28px; padding: 0 10px; border-radius: 7px; background: var(--accent-grad); color: var(--accent-ink); box-shadow: var(--top-hi), var(--shadow-1); font: 700 12px "JetBrains Mono", ui-monospace, monospace }
 .brand-copy { min-width: 0; display: grid; gap: 1px }
 .brand-copy b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--head); font-size: 13.5px; font-weight: 650 }
 .brand-copy small { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace }
@@ -62,7 +64,7 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .command-line .cmd-input { flex: 1; min-width: 0; color: var(--text); background: transparent; border: 0; outline: 0; font: 14px "JetBrains Mono", ui-monospace, monospace }
 .command-line .cmd-hint { flex: none; color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace }
 .modeline { display: flex; align-items: center; height: 26px; background: var(--surface); border-top: 1px solid var(--border); color: var(--text-dim); font: 11px "JetBrains Mono", ui-monospace, monospace }
-.modeline .ml-mode { align-self: stretch; display: flex; align-items: center; padding: 0 12px; background: var(--accent); color: var(--accent-ink); font-weight: 700; letter-spacing: .04em }
+.modeline .ml-mode { align-self: stretch; display: flex; align-items: center; padding: 0 12px; background: var(--accent); color: var(--accent-ink); box-shadow: var(--top-hi); font-weight: 700; letter-spacing: .04em }
 .modeline.mode-insert .ml-mode { background: var(--green) }
 .modeline.mode-compose .ml-mode { background: var(--green) }
 .modeline.mode-search .ml-mode { background: var(--orange) }
@@ -94,7 +96,7 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .settings-modal { display: flex; width: min(100%, 860px); height: min(640px, 82vh); background: var(--surface); border: 1px solid var(--border-2); border-radius: 14px; box-shadow: 0 30px 80px rgba(0, 0, 0, .6); overflow: hidden }
 .set-nav { width: 210px; flex: none; padding: 16px 12px; border-right: 1px solid var(--border); background: var(--bg); display: flex; flex-direction: column }
 .set-title { margin: 6px 10px 16px; color: var(--head); font: 600 15px "Hanken Grotesk", Inter, sans-serif }
-.set-catitem { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 9px; margin: 2px 0; border: 0; background: transparent; color: var(--text-dim); font-size: 13.5px; text-align: left }
+.set-catitem { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 9px; margin: 2px 0; border: 0; background: transparent; color: var(--text-dim); font-size: 13.5px; text-align: left; transition: background var(--ease), color var(--ease) }
 .set-catitem:hover { background: var(--surface-2) }
 .set-catitem.active { background: var(--accent-soft); color: var(--accent); font-weight: 600 }
 .set-icon { width: 16px; text-align: center }
@@ -204,10 +206,11 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .acctcol small { color: var(--text-mut); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .chev { color: var(--text-mut) }
 .avatar.sm { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; background: var(--accent-soft); color: var(--accent); font: 600 13px "Hanken Grotesk", Inter, sans-serif }
-.composebtn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 10px; margin: 12px 0 6px; border-radius: 11px; border: 0; background: var(--accent-soft); color: var(--accent); font: 600 13px "Hanken Grotesk", Inter, sans-serif }
+.composebtn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 10px; margin: 12px 0 6px; border-radius: 11px; border: 1px solid var(--accent-line); background: var(--accent-soft); color: var(--accent); font: 600 13px "Hanken Grotesk", Inter, sans-serif; transition: background var(--ease), box-shadow var(--ease) }
+.composebtn:hover { background: color-mix(in oklab, var(--accent) 22%, transparent); box-shadow: var(--sel-glow) }
 .grouphead { margin: 16px 12px 6px; color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase }
 .navgroup { display: grid; gap: 2px }
-.navitem { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; border-radius: 9px; border: 0; background: transparent; color: var(--text-dim); font-size: 13.5px; text-align: left }
+.navitem { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; border-radius: 9px; border: 0; background: transparent; color: var(--text-dim); font-size: 13.5px; text-align: left; transition: background var(--ease), color var(--ease) }
 .navitem:hover { background: var(--surface-2) }
 .navitem .navlabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .navitem.active { background: var(--accent-soft); color: var(--accent); font-weight: 600 }
@@ -253,7 +256,7 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 /* ── List pane ────────────────────────────────────────────────────────── */
 .list-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--border); background: var(--surface) }
 .list-pane.focused { box-shadow: inset 0 0 0 1px var(--accent-line) }
-.list-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 50px; padding: 0 16px; border-bottom: 1px solid var(--border); color: var(--text-mut); font: 12px "JetBrains Mono", ui-monospace, monospace }
+.list-header { position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 50px; padding: 0 16px; border-bottom: 1px solid var(--border); color: var(--text-mut); font: 12px "JetBrains Mono", ui-monospace, monospace; box-shadow: var(--shadow-1) }
 .list-header strong { color: var(--text) }
 .searchbtn { color: var(--text-mut); background: transparent; border: 1px solid var(--border-2); border-radius: 7px; padding: 4px 10px }
 .searchbtn:hover { color: var(--accent); border-color: var(--accent-line) }
@@ -261,7 +264,7 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .search-header label { display: flex; align-items: center; gap: 10px; background: var(--surface-2); border: 1px solid var(--accent); border-radius: 10px; padding: 10px 13px }
 .search-header input { flex: 1; color: var(--text); background: transparent; border: 0; outline: 0 }
 .category-tabs { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: auto; padding: 8px 12px; border-bottom: 1px solid var(--border) }
-.category-tabs button { display: flex; align-items: center; gap: 7px; height: 28px; flex: none; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--text-dim); padding: 0 9px; font: 11.5px "JetBrains Mono", ui-monospace, monospace }
+.category-tabs button { display: flex; align-items: center; gap: 7px; height: 28px; flex: none; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--text-dim); padding: 0 9px; font: 11.5px "JetBrains Mono", ui-monospace, monospace; transition: background var(--ease), color var(--ease), border-color var(--ease) }
 .category-tabs button:hover { background: var(--surface-2) }
 .category-tabs button.active { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent) }
 .category-tabs span { min-width: 18px; border-radius: 999px; background: var(--border); color: var(--text-dim); padding: 1px 6px; text-align: center; font-size: 10.5px }
@@ -270,9 +273,10 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .scroll-region { flex: 1; min-height: 0; overflow: auto }
 .section-label { margin: 0; padding: 16px 16px 6px; color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace; letter-spacing: .09em; text-transform: uppercase }
 .empty-state { margin: 0; padding: 40px 18px; color: var(--text-mut); font: 13px "JetBrains Mono", ui-monospace, monospace }
-.email-row { position: relative; display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; padding: 11px 16px; border-bottom: 1px solid var(--border); color: var(--text-dim); cursor: pointer }
-.email-row:hover, .email-row.selected { background: var(--accent-soft) }
-.email-row.selected::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 2px; background: var(--accent) }
+.email-row { position: relative; display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; padding: 11px 16px; border-bottom: 1px solid var(--border); color: var(--text-dim); cursor: pointer; transition: background var(--ease-fast) }
+.email-row:hover { background: var(--surface-2) }
+.email-row.selected { background: var(--accent-soft) }
+.email-row.selected::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 2px; background: var(--accent-grad); box-shadow: var(--sel-glow) }
 .row-main { min-width: 0; display: grid; gap: 2px }
 .row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px }
 .row-top strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-size: 13.5px; font-weight: 400 }
@@ -293,7 +297,7 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .reading-empty { flex: 1; display: grid; place-items: center; color: var(--text-mut); font: 13px "JetBrains Mono", ui-monospace, monospace }
 .thread-header { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 28px; border-bottom: 1px solid var(--border) }
 .thread-title { min-width: 0 }
-.thread-title h1 { margin: 0 0 6px; color: var(--head); font: 650 22px/1.2 "Hanken Grotesk", Inter, sans-serif }
+.thread-title h1 { margin: 0 0 6px; color: var(--head); font: 650 22px/1.2 "Hanken Grotesk", Inter, sans-serif; letter-spacing: -.012em }
 .thread-title p { margin: 0; color: var(--text-dim); font: 12px "JetBrains Mono", ui-monospace, monospace }
 .thread-actions { display: flex; gap: 7px; flex: none; flex-wrap: wrap; justify-content: flex-end }
 .thread-messages { flex: 1; min-height: 0; overflow: auto; padding: 0 26px }
@@ -320,7 +324,7 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .mobile-back { display: none; color: var(--text-dim); background: transparent; border: 1px solid var(--border-2); border-radius: 8px; padding: 6px 10px; font: 12px "JetBrains Mono", ui-monospace, monospace }
 .reading-preview { flex: 1; min-width: 0; display: grid; align-content: center; justify-items: start; gap: 14px; padding: 40px min(8vw, 84px); color: var(--text-dim) }
 .reading-preview .preview-eyebrow { color: var(--accent); font: 12px "JetBrains Mono", ui-monospace, monospace }
-.reading-preview h1 { max-width: 760px; margin: 0; color: var(--head); font: 650 28px/1.2 "Hanken Grotesk", Inter, sans-serif }
+.reading-preview h1 { max-width: 760px; margin: 0; color: var(--head); font: 650 28px/1.2 "Hanken Grotesk", Inter, sans-serif; letter-spacing: -.018em }
 .reading-preview p { max-width: 680px; margin: 0; color: var(--read-text); font-size: 15px; line-height: 1.7 }
 .preview-meta { display: flex; gap: 8px; flex-wrap: wrap; color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace }
 .preview-meta span { padding: 3px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border-2) }

@@ -23,6 +23,7 @@ const pct = computed(() => {
 <template>
   <footer class="modeline" :class="`mode-${s.mode.value.toLowerCase()}`">
     <span class="ml-mode">{{ s.mode.value }}</span>
+    <span class="ml-focus">{{ s.focusPane.value }}</span>
     <span class="ml-buffer">{{ buffer }}</span>
     <span class="ml-hints">{{ s.statusHints.value }}</span>
     <span class="ml-branch"> {{ s.account.value?.email || 'no account' }}</span>

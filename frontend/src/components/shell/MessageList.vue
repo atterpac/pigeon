@@ -2,7 +2,7 @@
 // Middle pane: conversation list with Today/Earlier sections, category tabs,
 // and a relative-line-number gutter (gated by settings.relativenumber).
 // Search input now lives in the command line; this pane just renders results.
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { categoryTabs, useMailShell } from '../../composables/useMailShell'
 import { useSettings } from '../../composables/useSettings'
 import { formatDate, labelFor } from '../../mail/format'
@@ -11,6 +11,8 @@ import { PhMagnifyingGlass, PhStar } from '@phosphor-icons/vue'
 
 const s = useMailShell()
 const settings = useSettings()
+const emit = defineEmits<{ (e: 'open-thread'): void }>()
+const scrollRegion = ref<HTMLElement | null>(null)
 
 const indexById = computed(() => {
   const map = new Map<string, number>()
@@ -25,19 +27,45 @@ function rel(conversation: Conversation) {
 function isCurrent(conversation: Conversation) {
   return indexById.value.get(conversation.id) === s.selectedIndex.value
 }
-function selectAndOpen(conversation: Conversation) {
-  s.selectedIndex.value = indexById.value.get(conversation.id) ?? 0
-  void s.openThread(conversation.id)
+function rowIndex(conversation: Conversation) {
+  return indexById.value.get(conversation.id) ?? 0
 }
+function selectAndOpen(conversation: Conversation) {
+  s.selectedIndex.value = rowIndex(conversation)
+  void s.openThread(conversation.id)
+  emit('open-thread')
+}
+function keepSelectionVisible() {
+  const row = scrollRegion.value?.querySelector<HTMLElement>(`[data-list-index="${s.selectedIndex.value}"]`)
+  row?.scrollIntoView({ block: 'nearest' })
+}
+
+watch(
+  () => [s.selectedIndex.value, s.activeList.value.length, s.searchActive.value, s.activeMailbox.value, s.activeCategory.value],
+  () => nextTick(keepSelectionVisible),
+  { flush: 'post' },
+)
 </script>
 
 <template>
-  <section class="list-pane" :class="{ 'relno-on': settings.relativenumber }">
+  <section class="list-pane" :class="{ 'relno-on': settings.relativenumber, focused: s.focusPane.value === 'list' }" @pointerdown="s.focusList()">
     <header class="list-header">
       <p v-if="s.searchActive.value"><strong>{{ s.searchResults.value.length }}</strong> results</p>
       <p v-else><strong>{{ s.filteredConversations.value.length }}</strong> · {{ s.unreadCount.value }} unread</p>
       <button class="searchbtn" type="button" @click="s.openCommand('search')"><PhMagnifyingGlass :size="14" /></button>
     </header>
+
+    <nav class="mobile-mailboxes" aria-label="Mailboxes">
+      <button
+        v-for="mailbox in s.mailboxes.value"
+        :key="mailbox.id"
+        type="button"
+        :class="{ active: s.activeMailbox.value === mailbox.id }"
+        @click="s.openMailbox(mailbox.id)"
+      >
+        {{ mailbox.name }} <span v-if="mailbox.unread">{{ mailbox.unread }}</span>
+      </button>
+    </nav>
 
     <nav v-if="!s.searchActive.value" class="category-tabs" aria-label="Inbox categories">
       <button v-for="tab in categoryTabs" :key="tab.id" :class="{ active: s.activeCategory.value === tab.id }" type="button" @click="s.selectCategory(tab.id)">
@@ -45,13 +73,14 @@ function selectAndOpen(conversation: Conversation) {
       </button>
     </nav>
 
-    <div class="scroll-region">
+    <div ref="scrollRegion" class="scroll-region">
       <template v-if="s.searchActive.value">
         <article
           v-for="conversation in s.searchResults.value"
           :key="conversation.id"
           class="email-row"
           :class="{ unread: conversation.unread, selected: isCurrent(conversation) }"
+          :data-list-index="rowIndex(conversation)"
           @click="selectAndOpen(conversation)"
         >
           <span v-if="settings.relativenumber" class="relno" :class="{ cur: isCurrent(conversation) }">{{ rel(conversation) }}</span>
@@ -74,6 +103,7 @@ function selectAndOpen(conversation: Conversation) {
               :key="conversation.id"
               class="email-row"
               :class="{ unread: conversation.unread, selected: isCurrent(conversation) }"
+              :data-list-index="rowIndex(conversation)"
               @click="selectAndOpen(conversation)"
             >
               <span v-if="settings.relativenumber" class="relno" :class="{ cur: isCurrent(conversation) }">{{ rel(conversation) }}</span>

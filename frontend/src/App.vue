@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { defineAsyncComponent, onMounted, ref } from 'vue'
 import { useMailShell } from './composables/useMailShell'
 import OnboardingView from './onboarding/OnboardingView.vue'
 import MailShell from './components/shell/MailShell.vue'
-import Sandbox from './sandbox/Sandbox.vue'
 import { PhArrowLeft } from '@phosphor-icons/vue'
 
 const s = useMailShell()
 const sandboxOpen = ref(false)
+const devToolsEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_SANDBOX === 'true'
+const Sandbox = defineAsyncComponent(() => import('./sandbox/Sandbox.vue'))
 
 onMounted(() => { void s.initializeApp() })
 </script>
@@ -21,14 +22,14 @@ onMounted(() => { void s.initializeApp() })
     </section>
   </main>
 
-  <main v-else-if="sandboxOpen" class="sandbox-shell">
+  <main v-else-if="devToolsEnabled && sandboxOpen" class="sandbox-shell">
     <button class="sandbox-exit" type="button" @click="sandboxOpen = false"><PhArrowLeft :size="12" /> exit sandbox</button>
     <Sandbox />
   </main>
 
-  <OnboardingView v-else-if="s.appPhase.value === 'onboarding'" @open-sandbox="sandboxOpen = true" />
+  <OnboardingView v-else-if="s.appPhase.value === 'onboarding'" :dev-tools="devToolsEnabled" @open-sandbox="sandboxOpen = true" />
 
-  <MailShell v-else @open-sandbox="sandboxOpen = true" />
+  <MailShell v-else :dev-tools="devToolsEnabled" @open-sandbox="sandboxOpen = true" />
 </template>
 
 <style scoped>

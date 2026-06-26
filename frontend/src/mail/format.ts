@@ -10,6 +10,22 @@ export function initials(address: { name: string; addr: string }) {
   return (address.name || address.addr).split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
 }
 
+// Deterministic per-sender identity tint. Hashes the address to one of the
+// theme's named hue tokens so avatars stay colorful and scannable while still
+// inheriting whatever theme is active. Returns inline styles for a tinted chip.
+const AVATAR_HUES = ['--accent', '--green', '--orange', '--purple', '--cyan', '--red', '--star']
+export function avatarStyle(address: { name: string; addr: string }) {
+  const key = (address.addr || address.name).toLowerCase()
+  let hash = 0
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0
+  const hue = AVATAR_HUES[hash % AVATAR_HUES.length]
+  return {
+    color: `var(${hue})`,
+    background: `color-mix(in oklab, var(${hue}) 18%, transparent)`,
+    borderColor: `color-mix(in oklab, var(${hue}) 38%, transparent)`,
+  }
+}
+
 export function participantLine(conversation: Conversation | null) {
   return conversation?.participants.map((p) => p.name || p.addr).join(', ') ?? ''
 }

@@ -15,7 +15,6 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
-      '@wailsio/runtime': fileURLToPath(new URL('./src/wails-runtime-shim.ts', import.meta.url)),
     },
   },
 })
