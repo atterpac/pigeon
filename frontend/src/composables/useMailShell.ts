@@ -45,6 +45,8 @@ function createMailShell() {
   // Overlay / pane modes (replaced the old `screen` enum).
   const composeOpen = ref(false)
   const searchActive = ref(false)
+  // Active command-line input: `/` search or `:` ex-command (vim layer).
+  const command = ref<{ kind: 'search' | 'ex'; text: string } | null>(null)
 
   const draft = ref(newDraft())
   const recipientInput = ref('')
@@ -271,6 +273,45 @@ function createMailShell() {
   function moveSelection(delta: number) {
     selectedIndex.value = Math.max(0, Math.min(activeList.value.length - 1, selectedIndex.value + delta))
   }
+  function selectFirst() { selectedIndex.value = 0 }
+  function selectLast() { selectedIndex.value = Math.max(0, activeList.value.length - 1) }
+  async function archiveSelected() {
+    const conversation = selectedThread.value ?? selectedConversation.value
+    if (!client.value || !conversation) return
+    await client.value.archiveThread(conversation.id)
+    status.value = 'archived'
+    await openMailbox(activeMailbox.value)
+  }
+
+  // ── Command line (`/` search, `:` ex-command) ──────────────────────────
+  function openCommand(kind: 'search' | 'ex') {
+    if (kind === 'search') {
+      command.value = { kind, text: query.value }
+      searchActive.value = true
+      void runSearch()
+    } else {
+      command.value = { kind, text: '' }
+    }
+  }
+  function submitCommand() {
+    const current = command.value
+    command.value = null
+    if (current?.kind === 'ex') runEx(current.text)
+    // search results persist; selection moves to the list.
+  }
+  function cancelCommand() {
+    if (command.value?.kind === 'search') closeSearch()
+    command.value = null
+  }
+  function runEx(text: string) {
+    const cmd = text.trim().replace(/^:/, '')
+    if (cmd === 'archive') void archiveSelected()
+    else if (cmd === 'snooze') void snoozeThread()
+    else if (cmd === 'w' || cmd === 'write') { void queueSave(); status.value = 'draft saved' }
+    else if (cmd === 'q' || cmd === 'quit') { selectedThread.value = null; threadMessages.value = [] }
+    else if (cmd.startsWith('label ')) { query.value = `label:${cmd.slice(6).trim()}`; void openSearch() }
+    else status.value = `E492: not an editor command: ${cmd}`
+  }
   function newDraft(overrides: Partial<ComposeDraft> = {}): ComposeDraft {
     return { id: `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`, to: [], cc: [], bcc: [], subject: '', body: '', attachments: [], updatedAt: new Date().toISOString(), ...overrides }
   }
@@ -286,14 +327,15 @@ function createMailShell() {
     appPhase, client, account, configuredAccounts,
     activeMailbox, activeCategory, selectedIndex, selectedThread,
     mailboxes, labels, conversations, searchResults, threadMessages,
-    query, replyMode, replyExpanded, status, composeOpen, searchActive,
+    query, replyMode, replyExpanded, status, composeOpen, searchActive, command,
     draft, recipientInput, setup, setupStatus, setupError, setupBusy,
     filteredConversations, activeList, selectedConversation, unreadCount,
     todayConversations, earlierConversations, categoryCounts, mode, statusHints,
     initializeApp, bootMailbox, submitOnboarding, refreshShell, openMailbox, warmMailbox,
     selectCategory, openThread, prepareReply, archiveThread, snoozeThread, toggleStar, toggleRead,
     compose, sendDraft, discardDraft, materializeRecipients, queueSave, runSearch, openSearch, closeSearch,
-    moveSelection, attachMock,
+    moveSelection, selectFirst, selectLast, archiveSelected,
+    openCommand, submitCommand, cancelCommand, attachMock,
   }
 }
 
