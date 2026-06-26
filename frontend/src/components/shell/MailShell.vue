@@ -6,6 +6,7 @@ import { useMailShell } from '../../composables/useMailShell'
 import Sidebar from './Sidebar.vue'
 import MessageList from './MessageList.vue'
 import ReadingPane from './ReadingPane.vue'
+import ComposeModal from '../overlays/ComposeModal.vue'
 
 const emit = defineEmits<{ (e: 'open-sandbox'): void }>()
 const s = useMailShell()
@@ -61,6 +62,9 @@ function onEscape() {
       <MessageList />
       <ReadingPane />
     </div>
+
+    <ComposeModal v-if="s.composeOpen.value" />
+
 
     <footer class="statusbar">
       <strong>{{ s.mode.value }}</strong>

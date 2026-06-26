@@ -10,30 +10,8 @@ const s = useMailShell()
 
 <template>
   <section class="reading-pane">
-    <!-- Compose -->
-    <form v-if="s.composeOpen.value" class="compose-card" @submit.prevent="s.sendDraft()">
-      <header><h1>New message</h1><span>esc to discard</span></header>
-      <label><span>to</span><em v-for="to in s.draft.value.to" :key="to.addr">{{ to.name || to.addr }}</em><input v-model="s.recipientInput.value" placeholder="Add recipients..." /></label>
-      <label><span>subject</span><input v-model="s.draft.value.subject" placeholder="Subject" /></label>
-      <MarkdownEditor
-        v-model:body="s.draft.value.body"
-        variant="compose"
-        placeholder="Write a message..."
-        :status="s.status.value"
-        :reset-key="s.draft.value.id"
-        :show-discard="true"
-        :autofocus="true"
-        @send="s.sendDraft()"
-        @attach="s.attachMock()"
-        @discard="s.discardDraft()"
-      />
-      <div v-if="s.draft.value.attachments.length" class="attachment-row">
-        <button v-for="attachment in s.draft.value.attachments" :key="attachment.filename" type="button" @click="s.draft.value.attachments = s.draft.value.attachments.filter((item) => item.filename !== attachment.filename)">{{ attachment.filename }} <small>×</small></button>
-      </div>
-    </form>
-
     <!-- Thread -->
-    <template v-else-if="s.selectedThread.value">
+    <template v-if="s.selectedThread.value">
       <header class="thread-header">
         <div class="thread-title"><h1>{{ s.selectedThread.value.subject }}</h1><p>{{ s.selectedThread.value.messageCount }} messages · {{ participantLine(s.selectedThread.value) }}</p></div>
         <div class="thread-actions">
