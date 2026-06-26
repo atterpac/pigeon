@@ -172,13 +172,46 @@ function createMailShell() {
     activeCategory.value = category
     selectedIndex.value = 0
   }
+  // ── Local list reconciliation ──────────────────────────────────────────
+  // The client mutates server state, but the in-memory list/sidebar are
+  // separate objects — patch them optimistically so the UI reflects reads,
+  // archives, etc. immediately, then reload to reconcile with the backend.
+  function patchListConversation(id: string, patch: Partial<Conversation>) {
+    for (const list of [conversations.value, searchResults.value]) {
+      const row = list.find((conversation) => conversation.id === id)
+      if (row) Object.assign(row, patch)
+    }
+    if (selectedThread.value?.id === id) Object.assign(selectedThread.value, patch)
+  }
+  function removeListConversation(id: string) {
+    conversations.value = conversations.value.filter((conversation) => conversation.id !== id)
+    searchResults.value = searchResults.value.filter((conversation) => conversation.id !== id)
+    if (selectedThread.value?.id === id) { selectedThread.value = null; threadMessages.value = [] }
+    selectedIndex.value = Math.max(0, Math.min(selectedIndex.value, activeList.value.length - 1))
+  }
+  function bumpMailboxUnread(mailboxId: string, delta: number) {
+    const mailbox = mailboxes.value.find((item) => item.id === mailboxId)
+    if (mailbox) mailbox.unread = Math.max(0, mailbox.unread + delta)
+  }
+  async function reloadList() {
+    if (!client.value) return
+    mailboxes.value = await client.value.listMailboxes()
+    conversations.value = await client.value.listConversations(activeMailbox.value)
+    if (searchActive.value) searchResults.value = await client.value.searchConversations(query.value)
+    selectedIndex.value = Math.max(0, Math.min(selectedIndex.value, activeList.value.length - 1))
+  }
+
   async function openThread(threadId = selectedConversation.value?.id) {
     if (!client.value || !threadId) return
+    const wasUnread = conversations.value.find((c) => c.id === threadId)?.unread
+      ?? searchResults.value.find((c) => c.id === threadId)?.unread
     const thread = await client.value.getThread(threadId)
     selectedThread.value = thread.conversation
     threadMessages.value = thread.messages.map((message, index, messages) => ({ ...message, expanded: message.expanded || index === messages.length - 1 }))
     composeOpen.value = false
     status.value = 'thread loaded'
+    // getThread marks the thread read server-side; mirror that locally.
+    if (wasUnread) { patchListConversation(threadId, { unread: false }); bumpMailboxUnread(activeMailbox.value, -1) }
     prepareReply('reply')
   }
   function prepareReply(replyKind: ReplyMode) {
@@ -193,29 +226,34 @@ function createMailShell() {
       references: latest?.references ?? [],
     })
   }
+  async function moveOut(id: string | undefined, op: (id: string) => Promise<void>, label: string) {
+    if (!client.value || !id) return
+    const wasUnread = conversations.value.find((c) => c.id === id)?.unread
+    removeListConversation(id)
+    if (wasUnread) bumpMailboxUnread(activeMailbox.value, -1)
+    status.value = label
+    try { await op(id) } finally { await reloadList() }
+  }
   async function archiveThread() {
-    if (!client.value || !selectedThread.value) return
-    await client.value.archiveThread(selectedThread.value.id)
-    status.value = 'archived'
-    await openMailbox(activeMailbox.value)
+    await moveOut(selectedThread.value?.id, (id) => client.value!.archiveThread(id), 'archived')
   }
   async function snoozeThread() {
-    if (!client.value || !selectedThread.value) return
-    await client.value.snoozeThread(selectedThread.value.id)
-    status.value = 'snoozed'
-    await openMailbox(activeMailbox.value)
+    await moveOut(selectedThread.value?.id ?? selectedConversation.value?.id, (id) => client.value!.snoozeThread(id), 'snoozed')
   }
   async function toggleStar(conversation: Conversation | null = selectedThread.value ?? selectedConversation.value) {
     if (!client.value || !conversation) return
     const next = !conversation.starred
     conversation.starred = next
+    patchListConversation(conversation.id, { starred: next })
     await client.value.toggleStar(conversation.id, next)
   }
   async function toggleRead() {
     if (!client.value || !selectedThread.value) return
+    const id = selectedThread.value.id
     const read = selectedThread.value.unread
-    await client.value.markThreadRead(selectedThread.value.id, read)
-    selectedThread.value.unread = !read
+    patchListConversation(id, { unread: !read })
+    bumpMailboxUnread(activeMailbox.value, read ? -1 : 1)
+    await client.value.markThreadRead(id, read)
   }
   function compose() {
     draft.value = newDraft()
@@ -276,11 +314,7 @@ function createMailShell() {
   function selectFirst() { selectedIndex.value = 0 }
   function selectLast() { selectedIndex.value = Math.max(0, activeList.value.length - 1) }
   async function archiveSelected() {
-    const conversation = selectedThread.value ?? selectedConversation.value
-    if (!client.value || !conversation) return
-    await client.value.archiveThread(conversation.id)
-    status.value = 'archived'
-    await openMailbox(activeMailbox.value)
+    await moveOut(selectedThread.value?.id ?? selectedConversation.value?.id, (id) => client.value!.archiveThread(id), 'archived')
   }
 
   // ── Command line (`/` search, `:` ex-command) ──────────────────────────
