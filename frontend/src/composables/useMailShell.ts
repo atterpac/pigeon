@@ -11,6 +11,7 @@ import { errorMessage, isToday, parseAddresses } from '../mail/format'
 export type AppPhase = 'starting' | 'onboarding' | 'mail'
 export type CategoryTab = Category | 'all'
 export type ReplyMode = 'reply' | 'replyAll' | 'forward'
+export type FocusPane = 'list' | 'thread'
 
 export const categoryTabs: Array<{ id: CategoryTab; label: string }> = [
   { id: 'all', label: 'All' },
@@ -39,7 +40,9 @@ function createMailShell() {
   const threadMessages = ref<ThreadMessage[]>([])
   const query = ref('from:github is:unread')
   const replyMode = ref<ReplyMode>('reply')
+  const replyOpen = ref(false)
   const replyExpanded = ref(false)
+  const focusPane = ref<FocusPane>('list')
   const status = ref('loading')
 
   // Overlay / pane modes (replaced the old `screen` enum).
@@ -79,7 +82,8 @@ function createMailShell() {
   const statusHints = computed(() => {
     if (composeOpen.value) return '⌘↵ send · ⌘⇧A attach · esc discard'
     if (searchActive.value) return '↑↓ navigate · ↵ open · esc clear'
-    if (selectedThread.value) return 'r reply · a reply all · f forward · e archive · esc close'
+    if (selectedThread.value && focusPane.value === 'thread') return 'j k scroll · r reply · e archive · esc list'
+    if (selectedThread.value) return 'j k move · ↵ open · tab thread · e archive'
     return 'j k move · e archive · s snooze · c compose · ⌘K search'
   })
 
@@ -148,6 +152,8 @@ function createMailShell() {
     selectedIndex.value = 0
     selectedThread.value = null
     threadMessages.value = []
+    replyOpen.value = false
+    focusPane.value = 'list'
     composeOpen.value = false
     searchActive.value = false
     void warmMailbox(mailboxId)
@@ -171,6 +177,33 @@ function createMailShell() {
   function selectCategory(category: CategoryTab) {
     activeCategory.value = category
     selectedIndex.value = 0
+    focusPane.value = 'list'
+  }
+
+  // ── Folder CRUD ────────────────────────────────────────────────────────
+  async function createMailbox(name: string) {
+    if (!client.value?.createMailbox) return
+    const created = await client.value.createMailbox(name.trim())
+    mailboxes.value = await client.value.listMailboxes()
+    status.value = `created ${created.name}`
+    await openMailbox(created.id)
+  }
+  async function renameMailbox(id: string, newName: string) {
+    if (!client.value?.renameMailbox) return
+    const renamed = await client.value.renameMailbox(id, newName.trim())
+    mailboxes.value = await client.value.listMailboxes()
+    status.value = `renamed to ${renamed.name}`
+    if (activeMailbox.value === id) await openMailbox(renamed.id)
+  }
+  async function deleteMailbox(id: string) {
+    if (!client.value?.deleteMailbox) return
+    await client.value.deleteMailbox(id)
+    mailboxes.value = await client.value.listMailboxes()
+    status.value = 'folder deleted'
+    if (activeMailbox.value === id) {
+      const fallback = mailboxes.value.find((mailbox) => mailbox.role === 'inbox')?.id ?? mailboxes.value[0]?.id
+      if (fallback) await openMailbox(fallback)
+    }
   }
   // ── Local list reconciliation ──────────────────────────────────────────
   // The client mutates server state, but the in-memory list/sidebar are
@@ -186,7 +219,7 @@ function createMailShell() {
   function removeListConversation(id: string) {
     conversations.value = conversations.value.filter((conversation) => conversation.id !== id)
     searchResults.value = searchResults.value.filter((conversation) => conversation.id !== id)
-    if (selectedThread.value?.id === id) { selectedThread.value = null; threadMessages.value = [] }
+    if (selectedThread.value?.id === id) { selectedThread.value = null; threadMessages.value = []; focusPane.value = 'list' }
     selectedIndex.value = Math.max(0, Math.min(selectedIndex.value, activeList.value.length - 1))
   }
   function bumpMailboxUnread(mailboxId: string, delta: number) {
@@ -209,6 +242,9 @@ function createMailShell() {
     selectedThread.value = thread.conversation
     threadMessages.value = thread.messages.map((message, index, messages) => ({ ...message, expanded: message.expanded || index === messages.length - 1 }))
     composeOpen.value = false
+    replyOpen.value = false
+    replyExpanded.value = false
+    focusPane.value = 'thread'
     status.value = 'thread loaded'
     // getThread marks the thread read server-side; mirror that locally.
     if (wasUnread) { patchListConversation(threadId, { unread: false }); bumpMailboxUnread(activeMailbox.value, -1) }
@@ -225,6 +261,10 @@ function createMailShell() {
       inReplyTo: latest?.rfcMessageId,
       references: latest?.references ?? [],
     })
+  }
+  function openReply(replyKind: ReplyMode) {
+    prepareReply(replyKind)
+    replyOpen.value = true
   }
   async function moveOut(id: string | undefined, op: (id: string) => Promise<void>, label: string) {
     if (!client.value || !id) return
@@ -307,12 +347,28 @@ function createMailShell() {
   function closeSearch() {
     searchActive.value = false
     selectedIndex.value = 0
+    focusPane.value = 'list'
   }
   function moveSelection(delta: number) {
+    focusPane.value = 'list'
     selectedIndex.value = Math.max(0, Math.min(activeList.value.length - 1, selectedIndex.value + delta))
+    if (selectedThread.value?.id !== selectedConversation.value?.id) {
+      selectedThread.value = null
+      threadMessages.value = []
+      replyOpen.value = false
+    }
   }
-  function selectFirst() { selectedIndex.value = 0 }
-  function selectLast() { selectedIndex.value = Math.max(0, activeList.value.length - 1) }
+  function selectFirst() { focusPane.value = 'list'; selectedIndex.value = 0 }
+  function selectLast() { focusPane.value = 'list'; selectedIndex.value = Math.max(0, activeList.value.length - 1) }
+  function focusList() { focusPane.value = 'list' }
+  function focusThread() { if (selectedThread.value) focusPane.value = 'thread' }
+  function closeThread() {
+    selectedThread.value = null
+    threadMessages.value = []
+    replyOpen.value = false
+    replyExpanded.value = false
+    focusPane.value = 'list'
+  }
   async function archiveSelected() {
     await moveOut(selectedThread.value?.id ?? selectedConversation.value?.id, (id) => client.value!.archiveThread(id), 'archived')
   }
@@ -342,7 +398,7 @@ function createMailShell() {
     if (cmd === 'archive') void archiveSelected()
     else if (cmd === 'snooze') void snoozeThread()
     else if (cmd === 'w' || cmd === 'write') { void queueSave(); status.value = 'draft saved' }
-    else if (cmd === 'q' || cmd === 'quit') { selectedThread.value = null; threadMessages.value = [] }
+    else if (cmd === 'q' || cmd === 'quit') closeThread()
     else if (cmd.startsWith('label ')) { query.value = `label:${cmd.slice(6).trim()}`; void openSearch() }
     else status.value = `E492: not an editor command: ${cmd}`
   }
@@ -361,15 +417,16 @@ function createMailShell() {
     appPhase, client, account, configuredAccounts,
     activeMailbox, activeCategory, selectedIndex, selectedThread,
     mailboxes, labels, conversations, searchResults, threadMessages,
-    query, replyMode, replyExpanded, status, composeOpen, searchActive, command,
+    query, replyMode, replyOpen, replyExpanded, focusPane, status, composeOpen, searchActive, command,
     draft, recipientInput, setup, setupStatus, setupError, setupBusy,
     filteredConversations, activeList, selectedConversation, unreadCount,
     todayConversations, earlierConversations, categoryCounts, mode, statusHints,
     initializeApp, bootMailbox, submitOnboarding, refreshShell, openMailbox, warmMailbox,
-    selectCategory, openThread, prepareReply, archiveThread, snoozeThread, toggleStar, toggleRead,
+    selectCategory, createMailbox, renameMailbox, deleteMailbox,
+    openThread, prepareReply, archiveThread, snoozeThread, toggleStar, toggleRead,
     compose, sendDraft, discardDraft, materializeRecipients, queueSave, runSearch, openSearch, closeSearch,
-    moveSelection, selectFirst, selectLast, archiveSelected,
-    openCommand, submitCommand, cancelCommand, attachMock,
+    moveSelection, selectFirst, selectLast, archiveSelected, focusList, focusThread, closeThread,
+    openCommand, submitCommand, cancelCommand, attachMock, openReply,
   }
 }
 

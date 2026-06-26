@@ -9,7 +9,7 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .primary-action { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 9px; padding: 9px 16px; font-size: 13px; font-weight: 600 }
 .ghost-button, .format-button { display: inline-flex; align-items: center; gap: 5px; color: var(--text-dim); background: transparent; border: 1px solid var(--border-2); border-radius: 7px; padding: 6px 11px; font: 11px "JetBrains Mono", ui-monospace, monospace }
 .ghost-button:hover, .format-button:hover { background: var(--surface-2) }
-.sandbox-button, .modal-close, .searchbtn, .attachment-row button { display: inline-flex; align-items: center; gap: 6px }
+.sandbox-button, .modal-close, .searchbtn, .attachment-row button, .mobile-back { display: inline-flex; align-items: center; gap: 6px }
 
 /* ── Onboarding / starting ────────────────────────────────────────────── */
 .setup-shell { width: 100vw; min-height: 100vh; display: grid; place-items: center; padding: 28px; background: var(--bg) }
@@ -41,10 +41,11 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 /* ── Shell frame ──────────────────────────────────────────────────────── */
 .mail-shell { width: 100vw; height: 100vh; display: grid; grid-template-rows: 54px 1fr auto; overflow: hidden; background: var(--bg) }
 .topbar { display: grid; grid-template-columns: minmax(248px, 1fr) minmax(360px, 620px) minmax(248px, 1fr); align-items: center; gap: 20px; padding: 0 18px; background: var(--surface); border-bottom: 1px solid var(--border) }
-.path-group { display: flex; align-items: center; gap: 18px; color: var(--text-mut); font: 13px "JetBrains Mono", ui-monospace, monospace }
-.traffic { display: flex; gap: 7px }
-.traffic span { width: 11px; height: 11px; border-radius: 50%; background: var(--border-2) }
-.path b { color: var(--accent); font-weight: 500 }
+.brand-group { display: flex; align-items: center; gap: 10px; min-width: 0 }
+.brand-mark { flex: none; display: inline-grid; place-items: center; height: 28px; padding: 0 10px; border-radius: 7px; background: var(--accent); color: var(--accent-ink); font: 700 12px "JetBrains Mono", ui-monospace, monospace }
+.brand-copy { min-width: 0; display: grid; gap: 1px }
+.brand-copy b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--head); font-size: 13.5px; font-weight: 650 }
+.brand-copy small { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace }
 .search-affordance { height: 36px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border-2); border-radius: 9px; font-size: 13px }
 .topbar-actions { display: flex; align-items: center; gap: 10px; justify-self: end }
 .topbar-actions .primary-action { min-width: 118px }
@@ -64,6 +65,7 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .modeline.mode-compose .ml-mode { background: var(--green) }
 .modeline.mode-search .ml-mode { background: var(--orange) }
 .modeline.mode-thread .ml-mode { background: var(--purple) }
+.modeline .ml-focus { align-self: stretch; display: flex; align-items: center; padding: 0 10px; color: var(--accent); background: var(--accent-soft); border-right: 1px solid var(--border); text-transform: uppercase }
 .modeline .ml-buffer { padding: 0 12px; color: var(--text); border-right: 1px solid var(--border) }
 .modeline .ml-hints { padding: 0 12px; color: var(--text-mut); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .modeline .ml-branch { margin-left: auto; padding: 0 12px; color: var(--text-dim); border-left: 1px solid var(--border); white-space: nowrap }
@@ -136,6 +138,8 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 
 /* ── Sidebar style presets (R2) ───────────────────────────────────────── */
 .navicon { flex: none; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; background: var(--surface-2); color: var(--text-mut); font: 10px "JetBrains Mono", ui-monospace, monospace }
+.navitem.active .navicon { color: var(--accent); background: rgba(122, 162, 247, .1) }
+.label-icon { color: var(--text-mut) }
 .sidebar-cards .navitem { background: var(--surface-2); border: 1px solid var(--border-2); margin: 3px 0 }
 .sidebar-cards .navitem.active { background: var(--accent-soft); border-color: var(--accent-line) }
 .sidebar-compact .navitem { padding: 5px 10px; font-size: 12.5px; border-radius: 7px }
@@ -204,8 +208,24 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .dot.soft { background: var(--border); color: var(--text-dim) }
 .swatch { width: 8px; height: 8px; border-radius: 50%; flex: none }
 
+/* Folder CRUD */
+.grouphead-row { display: flex; align-items: center; justify-content: space-between }
+.grouphead-action { display: inline-flex; padding: 2px; border: 0; border-radius: 6px; background: transparent; color: var(--text-mut) }
+.grouphead-action:hover { color: var(--accent); background: var(--accent-soft) }
+.navrow { position: relative; display: flex; align-items: center }
+.navrow .navitem { flex: 1; min-width: 0 }
+.navactions { position: absolute; right: 6px; display: flex; gap: 2px; opacity: 0; background: linear-gradient(90deg, transparent, var(--surface) 24%); padding-left: 14px }
+.navrow:hover .navactions { opacity: 1 }
+.navactions.confirm { opacity: 1 }
+.folder-mini { display: inline-flex; padding: 4px; border: 0; border-radius: 6px; background: var(--surface-2); color: var(--text-dim) }
+.folder-mini:hover { color: var(--accent); background: var(--accent-soft) }
+.folder-mini.danger:hover { color: var(--red); background: rgba(247, 118, 142, .14) }
+.folder-edit { display: flex; align-items: center; gap: 4px; padding: 2px 0 }
+.folder-edit input { flex: 1; min-width: 0; height: 30px; padding: 0 10px; border: 1px solid var(--accent-line); border-radius: 9px; background: var(--surface-2); color: var(--text); outline: 0; font-size: 13.5px }
+
 /* ── List pane ────────────────────────────────────────────────────────── */
 .list-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--border); background: var(--surface) }
+.list-pane.focused { box-shadow: inset 0 0 0 1px var(--accent-line) }
 .list-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 50px; padding: 0 16px; border-bottom: 1px solid var(--border); color: var(--text-mut); font: 12px "JetBrains Mono", ui-monospace, monospace }
 .list-header strong { color: var(--text) }
 .searchbtn { color: var(--text-mut); background: transparent; border: 1px solid var(--border-2); border-radius: 7px; padding: 4px 10px }
@@ -219,6 +239,7 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .category-tabs button.active { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent) }
 .category-tabs span { min-width: 18px; border-radius: 999px; background: var(--border); color: var(--text-dim); padding: 1px 6px; text-align: center; font-size: 10.5px }
 .category-tabs button.active span { background: var(--accent); color: var(--accent-ink) }
+.mobile-mailboxes { display: none }
 .scroll-region { flex: 1; min-height: 0; overflow: auto }
 .section-label { margin: 0; padding: 16px 16px 6px; color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace; letter-spacing: .09em; text-transform: uppercase }
 .empty-state { margin: 0; padding: 40px 18px; color: var(--text-mut); font: 13px "JetBrains Mono", ui-monospace, monospace }
@@ -241,11 +262,13 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 
 /* ── Reading pane ─────────────────────────────────────────────────────── */
 .reading-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; background: var(--read-bg) }
+.reading-pane.focused { box-shadow: inset 0 0 0 1px var(--accent-line) }
 .reading-empty { flex: 1; display: grid; place-items: center; color: var(--text-mut); font: 13px "JetBrains Mono", ui-monospace, monospace }
-.thread-header { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 26px; border-bottom: 1px solid var(--border) }
-.thread-title h1 { margin: 0 0 4px; color: var(--head); font: 600 16px "Hanken Grotesk", Inter, sans-serif }
+.thread-header { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 28px; border-bottom: 1px solid var(--border) }
+.thread-title { min-width: 0 }
+.thread-title h1 { margin: 0 0 6px; color: var(--head); font: 650 22px/1.2 "Hanken Grotesk", Inter, sans-serif }
 .thread-title p { margin: 0; color: var(--text-dim); font: 12px "JetBrains Mono", ui-monospace, monospace }
-.thread-actions { display: flex; gap: 7px; flex: none }
+.thread-actions { display: flex; gap: 7px; flex: none; flex-wrap: wrap; justify-content: flex-end }
 .thread-messages { flex: 1; min-height: 0; overflow: auto; padding: 0 26px }
 .thread-messages article { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 14px; padding: 20px 0; border-bottom: 1px solid var(--border) }
 .avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--border-2); color: var(--text-dim); font: 11px "JetBrains Mono", ui-monospace, monospace }
@@ -258,13 +281,22 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .email-html-frame { display: block; width: min(100%, 820px); height: min(760px, 72vh); margin: 0 auto; border: 0; border-radius: 4px; background: #fff }
 
 /* ── Reply panel ──────────────────────────────────────────────────────── */
-.reply-panel { position: relative; flex: none; border-top: 1px solid var(--border); background: var(--surface); padding: 16px 26px }
+.reply-panel { position: relative; flex: none; border-top: 1px solid var(--border); background: var(--surface); padding: 12px 26px }
 .reply-panel.expanded { padding-top: 26px }
 .reply-expand-toggle { position: absolute; top: -15px; right: 26px; width: 34px; height: 28px; border-radius: 999px; border: 1px solid var(--border-2); background: var(--surface-2); color: var(--accent) }
 .reply-tabs { display: flex; align-items: center; gap: 8px; margin-bottom: 10px }
+.reply-tabs.compact { margin-bottom: 0 }
+.reply-tabs.compact button { border: 1px solid var(--border-2); background: var(--surface-2); padding: 7px 13px }
 .reply-tabs button { color: var(--text-dim); background: transparent; border: 0; border-radius: 6px; padding: 5px 12px; font: 11.5px "JetBrains Mono", ui-monospace, monospace }
 .reply-tabs button.active { background: var(--accent-soft); color: var(--accent) }
 .reply-tabs span { margin-left: auto; color: var(--text-mut); font: 11.5px "JetBrains Mono", ui-monospace, monospace }
+.mobile-back { display: none; color: var(--text-dim); background: transparent; border: 1px solid var(--border-2); border-radius: 8px; padding: 6px 10px; font: 12px "JetBrains Mono", ui-monospace, monospace }
+.reading-preview { flex: 1; min-width: 0; display: grid; align-content: center; justify-items: start; gap: 14px; padding: 40px min(8vw, 84px); color: var(--text-dim) }
+.reading-preview .preview-eyebrow { color: var(--accent); font: 12px "JetBrains Mono", ui-monospace, monospace }
+.reading-preview h1 { max-width: 760px; margin: 0; color: var(--head); font: 650 28px/1.2 "Hanken Grotesk", Inter, sans-serif }
+.reading-preview p { max-width: 680px; margin: 0; color: var(--read-text); font-size: 15px; line-height: 1.7 }
+.preview-meta { display: flex; gap: 8px; flex-wrap: wrap; color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace }
+.preview-meta span { padding: 3px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border-2) }
 
 /* ── Compose modal ────────────────────────────────────────────────────── */
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: start center; padding: 8vh 20px 20px; background: rgba(0, 0, 0, .5); backdrop-filter: blur(2px); overflow: auto }
@@ -310,7 +342,27 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 @keyframes blink { 50% { opacity: 0 } }
 
 @media (max-width: 1000px) {
+  .mail-shell { grid-template-rows: auto 1fr auto }
+  .topbar { grid-template-columns: 1fr; gap: 10px; padding: 10px 12px }
+  .topbar-actions { justify-self: stretch; overflow: auto; padding-bottom: 2px }
+  .search-affordance { justify-content: flex-start; padding: 0 12px }
   .body-shell { grid-template-columns: 1fr }
-  .sidebar, .list-pane { display: none }
-  .topbar { grid-template-columns: 1fr }
+  .sidebar { display: none }
+  .body-shell.mobile-list .list-pane { display: flex }
+  .body-shell.mobile-list .reading-pane { display: none }
+  .body-shell.mobile-thread .list-pane { display: none }
+  .body-shell.mobile-thread .reading-pane { display: flex }
+  .mobile-mailboxes { display: flex; gap: 6px; overflow: auto; padding: 8px 12px; border-bottom: 1px solid var(--border) }
+  .mobile-mailboxes button { flex: none; height: 30px; border: 1px solid var(--border-2); border-radius: 8px; background: transparent; color: var(--text-dim); padding: 0 10px; font: 11.5px "JetBrains Mono", ui-monospace, monospace }
+  .mobile-mailboxes button.active { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft) }
+  .mobile-mailboxes span { margin-left: 4px; color: var(--accent) }
+  .mobile-back { display: inline-flex }
+  .thread-header { display: grid; grid-template-columns: 1fr; padding: 14px 16px }
+  .thread-title h1 { font-size: 19px }
+  .thread-actions { justify-content: flex-start }
+  .thread-messages { padding: 0 16px }
+  .thread-messages article { grid-template-columns: 30px minmax(0, 1fr); gap: 10px }
+  .thread-messages header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px }
+  .thread-messages header span { grid-column: 1 / -1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .reply-panel { padding: 12px 16px }
 }

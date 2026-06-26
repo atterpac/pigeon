@@ -54,6 +54,9 @@ export type MailClient = {
   source: 'mock' | 'wails'
   getAccount(): Promise<Account>
   listMailboxes(): Promise<Mailbox[]>
+  createMailbox?(name: string): Promise<Mailbox>
+  renameMailbox?(id: string, newName: string): Promise<Mailbox>
+  deleteMailbox?(id: string): Promise<void>
   listLabels(): Promise<Label[]>
   listConversations(mailboxId: string): Promise<Conversation[]>
   preloadMailboxBodies?(mailboxId: string, limit?: number): Promise<number>

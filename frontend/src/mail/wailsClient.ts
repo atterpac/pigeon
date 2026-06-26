@@ -47,6 +47,18 @@ class WailsMailClient implements MailClient {
     return this.mailboxes.map(normalizeMailbox)
   }
 
+  async createMailbox(name: string): Promise<Mailbox> {
+    return normalizeMailbox(await Client.CreateMailbox(this.account, name))
+  }
+
+  async renameMailbox(id: string, newName: string): Promise<Mailbox> {
+    return normalizeMailbox(await Client.RenameMailbox(this.account, id, newName))
+  }
+
+  async deleteMailbox(id: string): Promise<void> {
+    await Client.DeleteMailbox(this.account, id)
+  }
+
   async listLabels(): Promise<Label[]> {
     this.mailboxes = await Client.Mailboxes(this.account.ID)
     return this.mailboxes
