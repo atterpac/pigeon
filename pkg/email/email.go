@@ -1,0 +1,605 @@
+// Package email is the public SDK facade: a single Client that a frontend uses
+// to manage accounts, read mail from the local store (fast, offline), send, and
+// run background sync. All reads hit SQLite; the network is never on the read
+// path.
+//
+// A frontend supplies a ProviderFactory (mapping an account to a concrete
+// Gmail/IMAP backend) so the SDK core stays backend-agnostic.
+package email
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/atterpac/email/internal/events"
+	"github.com/atterpac/email/internal/mime"
+	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/email/internal/provider"
+	"github.com/atterpac/email/internal/store"
+	synceng "github.com/atterpac/email/internal/sync"
+)
+
+// Re-exported domain types so callers depend only on this package.
+type (
+	Account        = model.Account
+	AccountID      = model.AccountID
+	Mailbox        = model.Mailbox
+	Message        = model.Message
+	Thread         = model.Thread
+	ThreadID       = model.ThreadID
+	MessageID      = model.MessageID
+	Address        = model.Address
+	Outgoing       = model.Outgoing
+	Outfile        = model.Outfile
+	Part           = model.Part
+	ThreadListItem = model.ThreadListItem
+	Draft          = model.Draft
+	Snoozed        = model.Snoozed
+	Flag           = model.Flag
+	LabelID        = model.LabelID
+	Role           = model.Role
+
+	// Event is a changefeed notification; subscribe via Client.Events.
+	Event = events.Event
+)
+
+// Kind constants for accounts.
+const (
+	KindIMAP  = model.KindIMAP
+	KindGmail = model.KindGmail
+)
+
+// Role constants for normalized mailboxes.
+const (
+	RoleNone    = model.RoleNone
+	RoleInbox   = model.RoleInbox
+	RoleSent    = model.RoleSent
+	RoleDrafts  = model.RoleDrafts
+	RoleTrash   = model.RoleTrash
+	RoleSpam    = model.RoleSpam
+	RoleArchive = model.RoleArchive
+)
+
+// SyncOptions configures a background sync loop. See sync.Options.
+type SyncOptions = synceng.Options
+
+// ProviderFactory builds a backend for an account (resolving credentials,
+// choosing Gmail REST vs IMAP, etc.). Defined by the application layer.
+type ProviderFactory func(ctx context.Context, acct Account) (provider.Provider, error)
+
+// Config configures a Client.
+type Config struct {
+	DBPath   string          // SQLite path; created if absent
+	Provider ProviderFactory // required: builds backends for accounts
+}
+
+// Client is the SDK entry point. Safe for concurrent use.
+type Client struct {
+	store   *store.Store
+	eng     *synceng.Engine
+	factory ProviderFactory
+
+	mu        sync.Mutex
+	providers map[AccountID]provider.Provider
+	daemons   map[AccountID]context.CancelFunc
+}
+
+// Open initializes the store (running migrations) and the sync engine.
+func Open(ctx context.Context, cfg Config) (*Client, error) {
+	if cfg.Provider == nil {
+		return nil, fmt.Errorf("email: Config.Provider is required")
+	}
+	st, err := store.Open(ctx, cfg.DBPath)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{
+		store:     st,
+		eng:       synceng.New(st),
+		factory:   cfg.Provider,
+		providers: map[AccountID]provider.Provider{},
+		daemons:   map[AccountID]context.CancelFunc{},
+	}, nil
+}
+
+// provider returns the cached backend for acct, building it on first use.
+func (c *Client) provider(ctx context.Context, acct Account) (provider.Provider, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if p, ok := c.providers[acct.ID]; ok {
+		return p, nil
+	}
+	p, err := c.factory(ctx, acct)
+	if err != nil {
+		return nil, err
+	}
+	c.providers[acct.ID] = p
+	return p, nil
+}
+
+// AddAccount registers an account and its mailbox topology, then returns the
+// mailboxes. Call StartSync to begin pulling mail.
+func (c *Client) AddAccount(ctx context.Context, acct Account) ([]Mailbox, error) {
+	p, err := c.provider(ctx, acct)
+	if err != nil {
+		return nil, err
+	}
+	return c.eng.RegisterAccount(ctx, p, acct)
+}
+
+// ForgetAccount stops the account's sync loop, closes its provider, removes it
+// from the local store (mailboxes/messages cascade), and drops the cached
+// provider. Credentials live outside the store and must be deleted by the
+// caller. Safe to call for an account that was never fully registered.
+func (c *Client) ForgetAccount(ctx context.Context, acct AccountID) error {
+	c.StopSync(acct)
+	c.mu.Lock()
+	if p, ok := c.providers[acct]; ok {
+		_ = p.Close()
+		delete(c.providers, acct)
+	}
+	c.mu.Unlock()
+	return c.store.DeleteAccount(ctx, acct)
+}
+
+// Accounts lists configured accounts.
+func (c *Client) Accounts(ctx context.Context) ([]Account, error) {
+	return c.store.ListAccounts(ctx)
+}
+
+// Mailboxes returns the mailbox/label topology for an account.
+func (c *Client) Mailboxes(ctx context.Context, acct AccountID) ([]Mailbox, error) {
+	return c.store.Mailboxes(ctx, acct)
+}
+
+// CreateMailbox creates a folder on the server and records it in the local
+// store, returning the new mailbox.
+func (c *Client) CreateMailbox(ctx context.Context, acct Account, name string) (Mailbox, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Mailbox{}, fmt.Errorf("mailbox name is required")
+	}
+	p, err := c.provider(ctx, acct)
+	if err != nil {
+		return Mailbox{}, err
+	}
+	mb, err := p.CreateMailbox(ctx, name)
+	if err != nil {
+		return Mailbox{}, err
+	}
+	mb.Account = acct.ID
+	if err := c.store.UpsertMailboxes(ctx, []Mailbox{mb}); err != nil {
+		return Mailbox{}, err
+	}
+	return mb, nil
+}
+
+// RenameMailbox renames a folder on the server and updates the local store.
+// System folders (inbox/sent/drafts/archive/…) cannot be renamed.
+func (c *Client) RenameMailbox(ctx context.Context, acct Account, id LabelID, newName string) (Mailbox, error) {
+	newName = strings.TrimSpace(newName)
+	if newName == "" {
+		return Mailbox{}, fmt.Errorf("mailbox name is required")
+	}
+	if err := c.guardUserMailbox(ctx, acct.ID, id); err != nil {
+		return Mailbox{}, err
+	}
+	p, err := c.provider(ctx, acct)
+	if err != nil {
+		return Mailbox{}, err
+	}
+	mb, err := p.RenameMailbox(ctx, provider.MailboxRef{ID: id, Path: string(id)}, newName)
+	if err != nil {
+		return Mailbox{}, err
+	}
+	mb.Account = acct.ID
+	if err := c.store.UpsertMailboxes(ctx, []Mailbox{mb}); err != nil {
+		return Mailbox{}, err
+	}
+	if mb.ID != id {
+		_ = c.store.DeleteMailbox(ctx, acct.ID, id)
+	}
+	return mb, nil
+}
+
+// DeleteMailbox removes a folder on the server and locally. System folders
+// cannot be deleted.
+func (c *Client) DeleteMailbox(ctx context.Context, acct Account, id LabelID) error {
+	if err := c.guardUserMailbox(ctx, acct.ID, id); err != nil {
+		return err
+	}
+	p, err := c.provider(ctx, acct)
+	if err != nil {
+		return err
+	}
+	if err := p.DeleteMailbox(ctx, provider.MailboxRef{ID: id, Path: string(id)}); err != nil {
+		return err
+	}
+	return c.store.DeleteMailbox(ctx, acct.ID, id)
+}
+
+// guardUserMailbox rejects mutations targeting a system-role mailbox.
+func (c *Client) guardUserMailbox(ctx context.Context, acct AccountID, id LabelID) error {
+	mbs, err := c.store.Mailboxes(ctx, acct)
+	if err != nil {
+		return err
+	}
+	for _, mb := range mbs {
+		if mb.ID == id && mb.Role != RoleNone {
+			return fmt.Errorf("cannot modify system mailbox %q", id)
+		}
+	}
+	return nil
+}
+
+// Threads lists conversations for an account, newest activity first.
+func (c *Client) Threads(ctx context.Context, acct AccountID, limit int) ([]Thread, error) {
+	return c.store.Threads(ctx, acct, limit)
+}
+
+// ConversationList returns denormalized conversation-list rows (participants,
+// snippet, count, latest sender, labels) ready to render an inbox view.
+func (c *Client) ConversationList(ctx context.Context, acct AccountID, limit int) ([]ThreadListItem, error) {
+	return c.store.ThreadListItems(ctx, acct, limit)
+}
+
+// ThreadMessages returns all messages in a thread, oldest first.
+func (c *Client) ThreadMessages(ctx context.Context, acct AccountID, thread ThreadID) ([]Message, error) {
+	return c.store.ThreadMessages(ctx, acct, thread)
+}
+
+// MailboxMessages returns messages in a mailbox/label, newest first.
+func (c *Client) MailboxMessages(ctx context.Context, acct AccountID, mailbox LabelID, limit int) ([]Message, error) {
+	return c.store.MailboxMessages(ctx, acct, mailbox, limit)
+}
+
+// Message returns a single message envelope from the local store.
+func (c *Client) Message(ctx context.Context, acct AccountID, id MessageID) (Message, error) {
+	return c.store.Message(ctx, acct, id)
+}
+
+// Search runs a local full-text query (subject/sender; body once body-sync
+// lands), newest first.
+func (c *Client) Search(ctx context.Context, acct AccountID, query string, limit int) ([]Message, error) {
+	return c.store.Search(ctx, acct, query, limit)
+}
+
+// MessageBody returns a message's decoded parts (inline bodies + attachments).
+// The first call fetches from the provider, parses the MIME, persists the parts,
+// and makes the body searchable; subsequent calls are served from the local
+// store with no network.
+func (c *Client) MessageBody(ctx context.Context, acct Account, id MessageID) ([]Part, error) {
+	p, err := c.provider(ctx, acct)
+	if err != nil {
+		return nil, err
+	}
+	return c.eng.LoadBody(ctx, p, acct.ID, id)
+}
+
+// PreloadMailboxBodies fetches and caches bodies for the newest messages in a
+// mailbox. It is intended for opportunistic UI prewarming after a list view has
+// rendered; already-loaded bodies are skipped.
+func (c *Client) PreloadMailboxBodies(ctx context.Context, acct Account, mailbox LabelID, limit int) (int, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	msgs, err := c.store.MailboxMessages(ctx, acct.ID, mailbox, limit)
+	if err != nil {
+		return 0, err
+	}
+	ids := make([]MessageID, 0, len(msgs))
+	for _, msg := range msgs {
+		if msg.BodyLoaded {
+			continue
+		}
+		ids = append(ids, msg.ID)
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	p, err := c.provider(ctx, acct)
+	if err != nil {
+		return 0, err
+	}
+	return c.eng.LoadBodies(ctx, p, acct.ID, ids)
+}
+
+// ReclassifyMailbox recalculates Gmail-like categories for recent messages in a
+// mailbox, using any cached body text as extra signal.
+func (c *Client) ReclassifyMailbox(ctx context.Context, acct AccountID, mailbox LabelID, limit int) (int, error) {
+	return c.store.ReclassifyMailbox(ctx, acct, mailbox, limit)
+}
+
+// Attachments returns just the attachment parts of a message (loading the body
+// if needed).
+func (c *Client) Attachments(ctx context.Context, acct Account, id MessageID) ([]Part, error) {
+	parts, err := c.MessageBody(ctx, acct, id)
+	if err != nil {
+		return nil, err
+	}
+	var atts []Part
+	for _, p := range parts {
+		if p.Disposition == "attachment" {
+			atts = append(atts, p)
+		}
+	}
+	return atts, nil
+}
+
+// Events returns a changefeed channel of store mutations and a cancel func.
+// Events are hints — coalesce and refetch rather than treating them as a log.
+func (c *Client) Events() (<-chan Event, func()) {
+	return c.store.Events().Subscribe()
+}
+
+// Send composes, queues, and immediately delivers a message. On delivery
+// failure it remains in the durable outbox for retry (e.g. by a running sync
+// loop). Returns true if it went out now.
+func (c *Client) Send(ctx context.Context, acct Account, out Outgoing) (sent bool, err error) {
+	if out.From.Addr == "" {
+		out.From = Address{Addr: acct.Email}
+	}
+	raw, err := mime.Build(out, time.Now(), genMessageID(acct.Email))
+	if err != nil {
+		return false, err
+	}
+	if err := c.eng.EnqueueSend(ctx, acct.ID, model.RawMessage{Bytes: raw}, provider.SendOpts{Thread: out.Thread}); err != nil {
+		return false, err
+	}
+	p, err := c.provider(ctx, acct)
+	if err != nil {
+		return false, err
+	}
+	n, err := c.eng.DrainOutbox(ctx, p, acct.ID)
+	return n > 0, err
+}
+
+// InboxLabel is the label/mailbox treated as "the inbox" for Archive.
+const InboxLabel LabelID = "INBOX"
+
+// mutate applies a local optimistic change (fn) then flushes the outbox so the
+// provider mutation goes out immediately. The local change has already published
+// a changefeed event, so a UI updates instantly even if the network is slow.
+func (c *Client) mutate(ctx context.Context, acct Account, fn func(AccountID) error) error {
+	if err := fn(acct.ID); err != nil {
+		return err
+	}
+	p, err := c.provider(ctx, acct)
+	if err != nil {
+		return err
+	}
+	_, err = c.eng.DrainOutbox(ctx, p, acct.ID)
+	return err
+}
+
+// MarkRead marks messages read (read=true) or unread (read=false).
+func (c *Client) MarkRead(ctx context.Context, acct Account, ids []MessageID, read bool) error {
+	add, remove := []Flag{model.FlagSeen}, []Flag(nil)
+	if !read {
+		add, remove = nil, []Flag{model.FlagSeen}
+	}
+	return c.mutate(ctx, acct, func(id AccountID) error { return c.eng.SetFlags(ctx, id, ids, add, remove) })
+}
+
+// Star flags/unflags messages.
+func (c *Client) Star(ctx context.Context, acct Account, ids []MessageID, on bool) error {
+	add, remove := []Flag{model.FlagFlagged}, []Flag(nil)
+	if !on {
+		add, remove = nil, []Flag{model.FlagFlagged}
+	}
+	return c.mutate(ctx, acct, func(id AccountID) error { return c.eng.SetFlags(ctx, id, ids, add, remove) })
+}
+
+// Archive ("Done") removes messages from the inbox and records completion for
+// the Done-today metric.
+func (c *Client) Archive(ctx context.Context, acct Account, ids []MessageID) error {
+	_ = c.store.RecordDone(ctx, acct.ID, ids, time.Now())
+	return c.mutate(ctx, acct, func(id AccountID) error {
+		return c.eng.ApplyLabels(ctx, id, ids, nil, []LabelID{InboxLabel})
+	})
+}
+
+// ApplyLabels adds and/or removes labels on messages.
+func (c *Client) ApplyLabels(ctx context.Context, acct Account, ids []MessageID, add, remove []LabelID) error {
+	return c.mutate(ctx, acct, func(id AccountID) error { return c.eng.ApplyLabels(ctx, id, ids, add, remove) })
+}
+
+// Move relocates messages to a destination mailbox/label.
+func (c *Client) Move(ctx context.Context, acct Account, ids []MessageID, dst LabelID) error {
+	return c.mutate(ctx, acct, func(id AccountID) error { return c.eng.Move(ctx, id, ids, dst) })
+}
+
+// Delete moves messages to Trash.
+func (c *Client) Delete(ctx context.Context, acct Account, ids []MessageID) error {
+	return c.mutate(ctx, acct, func(id AccountID) error { return c.eng.Delete(ctx, id, ids) })
+}
+
+// ── drafts (local, autosaved) ───────────────────────────────────
+
+// SaveDraft upserts a compose draft locally and returns its id (generated if
+// empty). Cheap — safe to call on every keystroke for autosave.
+func (c *Client) SaveDraft(ctx context.Context, acct AccountID, id string, out Outgoing) (string, error) {
+	return c.store.SaveDraft(ctx, acct, id, out)
+}
+
+// Drafts lists an account's drafts, most recently updated first.
+func (c *Client) Drafts(ctx context.Context, acct AccountID) ([]Draft, error) {
+	return c.store.ListDrafts(ctx, acct)
+}
+
+// Draft returns a single draft.
+func (c *Client) Draft(ctx context.Context, acct AccountID, id string) (Draft, error) {
+	return c.store.GetDraft(ctx, acct, id)
+}
+
+// DiscardDraft deletes a draft.
+func (c *Client) DiscardDraft(ctx context.Context, acct AccountID, id string) error {
+	return c.store.DeleteDraft(ctx, acct, id)
+}
+
+// SendDraft sends a saved draft, then discards it on success.
+func (c *Client) SendDraft(ctx context.Context, acct Account, id string) (bool, error) {
+	d, err := c.store.GetDraft(ctx, acct.ID, id)
+	if err != nil {
+		return false, err
+	}
+	sent, err := c.Send(ctx, acct, d.Message)
+	if err != nil {
+		return false, err
+	}
+	if sent {
+		_ = c.store.DeleteDraft(ctx, acct.ID, id)
+	}
+	return sent, nil
+}
+
+// ── snooze ──────────────────────────────────────────────────────
+
+// Snooze hides messages from the inbox until `until`; a running sync loop
+// returns them automatically when the time elapses.
+func (c *Client) Snooze(ctx context.Context, acct Account, ids []MessageID, until time.Time) error {
+	if err := c.store.Snooze(ctx, acct.ID, ids, until); err != nil {
+		return err
+	}
+	return c.mutate(ctx, acct, func(id AccountID) error {
+		return c.eng.ApplyLabels(ctx, id, ids, nil, []LabelID{InboxLabel})
+	})
+}
+
+// Unsnooze returns snoozed messages to the inbox immediately.
+func (c *Client) Unsnooze(ctx context.Context, acct Account, ids []MessageID) error {
+	if err := c.store.Unsnooze(ctx, acct.ID, ids); err != nil {
+		return err
+	}
+	return c.mutate(ctx, acct, func(id AccountID) error {
+		return c.eng.ApplyLabels(ctx, id, ids, []LabelID{InboxLabel}, nil)
+	})
+}
+
+// Snoozed lists current snoozes for an account.
+func (c *Client) Snoozed(ctx context.Context, acct AccountID) ([]Snoozed, error) {
+	return c.store.ListSnoozes(ctx, acct)
+}
+
+// DoneToday counts messages archived ("done") since local midnight.
+func (c *Client) DoneToday(ctx context.Context, acct AccountID) (int, error) {
+	now := time.Now()
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	return c.store.DoneSince(ctx, acct, midnight)
+}
+
+// SyncOnce runs one forward sync of a mailbox (pull new mail into the store).
+func (c *Client) SyncOnce(ctx context.Context, acct Account, mailbox LabelID) (int, error) {
+	p, err := c.provider(ctx, acct)
+	if err != nil {
+		return 0, err
+	}
+	return c.eng.SyncForward(ctx, p, acct.ID, provider.MailboxRef{ID: mailbox, Path: string(mailbox)})
+}
+
+// StartSync launches the background sync loop for an account (forward poll +
+// IDLE/push where supported, resumable backfill, outbox drain). It returns
+// immediately; call StopSync or Close to stop. Re-calling for the same account
+// replaces the previous loop.
+func (c *Client) StartSync(ctx context.Context, acct Account, mailboxes []LabelID, opts SyncOptions) error {
+	p, err := c.provider(ctx, acct)
+	if err != nil {
+		return err
+	}
+	refs := make([]provider.MailboxRef, len(mailboxes))
+	for i, m := range mailboxes {
+		refs[i] = provider.MailboxRef{ID: m, Path: string(m)}
+	}
+
+	c.mu.Lock()
+	if cancel, ok := c.daemons[acct.ID]; ok {
+		cancel()
+	}
+	loopCtx, cancel := context.WithCancel(context.Background())
+	c.daemons[acct.ID] = cancel
+	c.mu.Unlock()
+
+	go func() { _ = c.eng.RunAccount(loopCtx, p, acct, refs, opts) }()
+	return nil
+}
+
+// StopSync stops the background loop for an account, if running.
+func (c *Client) StopSync(acct AccountID) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if cancel, ok := c.daemons[acct]; ok {
+		cancel()
+		delete(c.daemons, acct)
+	}
+}
+
+// Close stops all sync loops, closes providers, and closes the store.
+func (c *Client) Close() error {
+	c.mu.Lock()
+	for id, cancel := range c.daemons {
+		cancel()
+		delete(c.daemons, id)
+	}
+	for id, p := range c.providers {
+		_ = p.Close()
+		delete(c.providers, id)
+	}
+	c.mu.Unlock()
+	return c.store.Close()
+}
+
+// Reply builds an Outgoing pre-wired for correct threading: recipient and
+// References/In-Reply-To are derived from orig. replyAll includes the original
+// To/Cc recipients (minus self). Caller fills Text/HTML/Attachments and passes
+// it to Send.
+func Reply(orig Message, self Address, replyAll bool) Outgoing {
+	out := Outgoing{
+		From:      self,
+		Subject:   ensurePrefix(orig.Subject, "Re: "),
+		Thread:    orig.Thread,
+		InReplyTo: orig.RFCMessageID,
+		// References = original chain + the message being replied to.
+		References: append(append([]string{}, orig.References...), orig.RFCMessageID),
+	}
+	out.To = orig.From
+	if replyAll {
+		for _, a := range append(orig.To, orig.Cc...) {
+			if a.Addr != self.Addr {
+				out.Cc = append(out.Cc, a)
+			}
+		}
+	}
+	return out
+}
+
+// Forward builds an Outgoing for forwarding orig (subject prefixed, no
+// recipients or threading set).
+func Forward(orig Message, self Address) Outgoing {
+	return Outgoing{From: self, Subject: ensurePrefix(orig.Subject, "Fwd: ")}
+}
+
+func ensurePrefix(subject, prefix string) string {
+	if len(subject) >= len(prefix) && strings.EqualFold(subject[:len(prefix)], prefix) {
+		return subject
+	}
+	return prefix + subject
+}
+
+// genMessageID builds a unique RFC 5322 Message-ID from the sender's domain.
+func genMessageID(from string) string {
+	domain := "localhost"
+	if i := strings.LastIndexByte(from, '@'); i >= 0 {
+		domain = from[i+1:]
+	}
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return fmt.Sprintf("<%s@%s>", hex.EncodeToString(b[:]), domain)
+}

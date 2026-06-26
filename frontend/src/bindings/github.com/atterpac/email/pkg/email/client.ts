@@ -86,10 +86,28 @@ export function ConversationList(acct: $models.AccountID, limit: number): $Cance
 }
 
 /**
+ * CreateMailbox creates a folder on the server and records it in the local
+ * store, returning the new mailbox.
+ */
+export function CreateMailbox(acct: $models.Account, name: string): $CancellablePromise<$models.Mailbox> {
+    return $Call.ByID(890052938, acct, name).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
+/**
  * Delete moves messages to Trash.
  */
 export function Delete(acct: $models.Account, ids: $models.MessageID[]): $CancellablePromise<void> {
     return $Call.ByID(2393304069, acct, ids);
+}
+
+/**
+ * DeleteMailbox removes a folder on the server and locally. System folders
+ * cannot be deleted.
+ */
+export function DeleteMailbox(acct: $models.Account, id: $models.LabelID): $CancellablePromise<void> {
+    return $Call.ByID(102173355, acct, id);
 }
 
 /**
@@ -210,6 +228,16 @@ export function PreloadMailboxBodies(acct: $models.Account, mailbox: $models.Lab
  */
 export function ReclassifyMailbox(acct: $models.AccountID, mailbox: $models.LabelID, limit: number): $CancellablePromise<number> {
     return $Call.ByID(2889393319, acct, mailbox, limit);
+}
+
+/**
+ * RenameMailbox renames a folder on the server and updates the local store.
+ * System folders (inbox/sent/drafts/archive/…) cannot be renamed.
+ */
+export function RenameMailbox(acct: $models.Account, id: $models.LabelID, newName: string): $CancellablePromise<$models.Mailbox> {
+    return $Call.ByID(2861535756, acct, id, newName).then(($result: any) => {
+        return $$createType2($result);
+    });
 }
 
 /**
