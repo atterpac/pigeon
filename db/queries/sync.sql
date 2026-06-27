@@ -14,6 +14,14 @@ ON CONFLICT(account, mailbox) DO UPDATE SET backfill = excluded.backfill;
 -- name: GetBackfill :one
 SELECT backfill FROM sync_state WHERE account = ? AND mailbox = ?;
 
+-- name: GetBackfillState :one
+SELECT backfill, backfill_done FROM sync_state WHERE account = ? AND mailbox = ?;
+
+-- name: MarkBackfillDone :exec
+INSERT INTO sync_state (account, mailbox, backfill, backfill_done)
+VALUES (?, ?, NULL, 1)
+ON CONFLICT(account, mailbox) DO UPDATE SET backfill = NULL, backfill_done = 1;
+
 -- name: ClearCursor :exec
 DELETE FROM sync_state WHERE account = ? AND mailbox = ?;
 

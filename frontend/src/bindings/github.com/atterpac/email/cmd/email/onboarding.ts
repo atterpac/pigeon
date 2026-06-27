@@ -15,10 +15,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as model$0 from "../../internal/model/models.js";
+import * as email$0 from "../../internal/email/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as email$0 from "../../pkg/email/models.js";
+import * as model$0 from "../../internal/model/models.js";
 
 /**
  * AddAppPasswordAccount registers an IMAP/SMTP account authenticated with a

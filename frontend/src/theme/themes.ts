@@ -1,6 +1,5 @@
-// Theme registry (R1). Themes are DATA, not hardcoded CSS classes: adding a
-// theme is a pure data add here, and applyTheme() writes the token contract to
-// :root at runtime. Settings -> Appearance iterates THEMES grouped by `pack`.
+// Theme registry. Themes are data; applyTheme() writes the token contract to
+// :root at runtime.
 export type ThemeTokens = Record<string, string>
 
 export interface Theme {
@@ -683,6 +682,7 @@ export function getTheme(id: string): Theme {
 export function applyTheme(theme: Theme) {
   const root = document.documentElement
   for (const [key, value] of Object.entries(theme.tokens)) root.style.setProperty(key, value)
+  root.dataset.themeTone = theme.dark ? 'dark' : 'light'
 }
 
 /** THEMES grouped by pack, for the Appearance picker. */

@@ -1,10 +1,13 @@
 <script setup lang="ts">
 // The body of one settings category. Split out of SettingsModal so the `scroll`
 // settings layout can stack every category, while the other layouts render one.
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useSettings } from '../../composables/useSettings'
 import { useMailShell } from '../../composables/useMailShell'
 import { getTheme, themesByPack } from '../../theme/themes'
+import { Events } from '@wailsio/runtime'
+import { NotificationService } from '../../bindings/github.com/wailsapp/wails/v3/pkg/services/notifications'
+import { applyPollInterval } from '../../mail/syncSettings'
 
 defineProps<{ category: string }>()
 const settings = useSettings()
@@ -28,6 +31,122 @@ const settingsLayoutOptions = [
   'fullscreen',
 ] as const
 const densityOptions = ['comfortable', 'compact'] as const
+
+// --- Poll interval ----------------------------------------------------------
+const pollOptions = [
+  { label: '15 seconds', value: 15 },
+  { label: '30 seconds', value: 30 },
+  { label: '1 minute', value: 60 },
+  { label: '5 minutes', value: 300 },
+  { label: '15 minutes', value: 900 },
+] as const
+
+function setPollInterval(seconds: number) {
+  settings.pollIntervalSeconds = seconds
+  void applyPollInterval(seconds)
+}
+
+// --- Notifications test harness ---------------------------------------------
+// Drives the wails v3 notifications service directly so we can poke at it
+// without waiting for real mail to arrive.
+const notifLog = ref<string[]>([])
+const notifAuth = ref<boolean | null>(null)
+let notifOff: (() => void) | undefined
+
+function logNotif(msg: string) {
+  notifLog.value = [msg, ...notifLog.value].slice(0, 12)
+}
+
+let notifSeq = 0
+function notifId() {
+  notifSeq += 1
+  return `test-${notifSeq}-${Math.floor(performance.now())}`
+}
+
+async function requestAuth() {
+  try {
+    notifAuth.value = await NotificationService.RequestNotificationAuthorization()
+    logNotif(`RequestAuthorization → ${notifAuth.value}`)
+  } catch (err) {
+    logNotif(`RequestAuthorization error: ${String(err)}`)
+  }
+}
+
+async function checkAuth() {
+  try {
+    notifAuth.value = await NotificationService.CheckNotificationAuthorization()
+    logNotif(`CheckAuthorization → ${notifAuth.value}`)
+  } catch (err) {
+    logNotif(`CheckAuthorization error: ${String(err)}`)
+  }
+}
+
+async function sendBasic() {
+  const id = notifId()
+  try {
+    await NotificationService.SendNotification({
+      id,
+      title: 'New message',
+      subtitle: 'inbox',
+      body: 'This is a basic test notification.',
+    } as any)
+    logNotif(`SendNotification(${id}) sent`)
+  } catch (err) {
+    logNotif(`SendNotification error: ${String(err)}`)
+  }
+}
+
+async function sendWithActions() {
+  const categoryId = 'test-actions'
+  const id = notifId()
+  try {
+    await NotificationService.RegisterNotificationCategory({
+      id: categoryId,
+      actions: [
+        { id: 'archive', title: 'Archive' },
+        { id: 'reply', title: 'Reply' },
+      ],
+      hasReplyField: true,
+      replyPlaceholder: 'Type a reply…',
+      replyButtonTitle: 'Send',
+    } as any)
+    await NotificationService.SendNotificationWithActions({
+      id,
+      title: 'Message with actions',
+      subtitle: 'inbox',
+      body: 'Tap an action button (desktop only).',
+      categoryId,
+    } as any)
+    logNotif(`SendNotificationWithActions(${id}) sent`)
+  } catch (err) {
+    logNotif(`SendNotificationWithActions error: ${String(err)}`)
+  }
+}
+
+async function clearAll() {
+  try {
+    await NotificationService.RemoveAllDeliveredNotifications()
+    await NotificationService.RemoveAllPendingNotifications()
+    logNotif('Cleared delivered + pending notifications')
+  } catch (err) {
+    logNotif(`Clear error: ${String(err)}`)
+  }
+}
+
+let mailOff: (() => void) | undefined
+onMounted(() => {
+  notifOff = Events.On('notification:action', (ev: { data?: unknown }) => {
+    logNotif(`action response: ${JSON.stringify(ev?.data)}`)
+  })
+  // Backend sync loop emits this whenever a poll pulls in new mail.
+  mailOff = Events.On('mail:new', (ev: { data?: unknown }) => {
+    logNotif(`poll → new mail: ${JSON.stringify(ev?.data)}`)
+  })
+})
+onUnmounted(() => {
+  notifOff?.()
+  mailOff?.()
+})
 </script>
 
 <template>
@@ -156,6 +275,44 @@ const densityOptions = ['comfortable', 'compact'] as const
       Press <b>?</b> anywhere for the full cheatsheet. Vim mode:
       {{ settings.vimMode ? 'on' : 'off' }}.
     </p>
+  </template>
+
+  <template v-else-if="category === 'notifications'">
+    <p class="set-section">Mail polling</p>
+    <p class="set-note">
+      How often to check for new mail in the background. Lower is snappier but
+      hits your provider more often; push-capable accounts update sooner regardless.
+    </p>
+    <div class="notif-actions">
+      <button
+        v-for="opt in pollOptions"
+        :key="opt.value"
+        class="set-btn"
+        :class="{ active: settings.pollIntervalSeconds === opt.value }"
+        type="button"
+        @click="setPollInterval(opt.value)"
+      >{{ opt.label }}</button>
+    </div>
+
+    <p class="set-section">Test harness</p>
+    <p class="set-note">
+      Drives the Wails notifications service directly.
+      Authorization:
+      <b>{{ notifAuth === null ? 'unknown' : notifAuth ? 'granted' : 'denied' }}</b>.
+      Desktop only — actions/replies won't fire in the browser preview.
+    </p>
+    <div class="notif-actions">
+      <button class="set-btn" type="button" @click="requestAuth">Request authorization</button>
+      <button class="set-btn" type="button" @click="checkAuth">Check authorization</button>
+      <button class="set-btn" type="button" @click="sendBasic">Send basic</button>
+      <button class="set-btn" type="button" @click="sendWithActions">Send with actions</button>
+      <button class="set-btn" type="button" @click="clearAll">Clear all</button>
+    </div>
+    <p class="set-section">Log</p>
+    <ul class="notif-log">
+      <li v-if="!notifLog.length" class="set-note">No events yet.</li>
+      <li v-for="(line, i) in notifLog" :key="i">{{ line }}</li>
+    </ul>
   </template>
 
   <!-- Placeholder tabs -->

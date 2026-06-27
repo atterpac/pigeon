@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/atterpac/email/internal/auth"
-	"github.com/atterpac/email/pkg/email"
+	"github.com/atterpac/email/internal/email"
 )
 
 // Onboarding is a Wails service for adding, listing, and removing mail
@@ -139,7 +139,7 @@ func (o *Onboarding) register(ctx context.Context, acct email.Account) (email.Ac
 		_ = o.app.creds.Delete(ctx, string(acct.ID))
 		return email.Account{}, fmt.Errorf("add account: %w", err)
 	}
-	if err := o.app.Client.StartSync(ctx, acct, defaultMailboxes, desktopSyncOptions()); err != nil {
+	if err := o.app.Client.StartSync(ctx, acct, defaultMailboxes, o.app.desktopSyncOptions()); err != nil {
 		return acct, fmt.Errorf("start sync: %w", err)
 	}
 	return acct, nil

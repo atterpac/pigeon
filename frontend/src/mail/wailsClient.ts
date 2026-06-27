@@ -1,12 +1,16 @@
-import * as Client from '@/bindings/github.com/atterpac/email/pkg/email/client'
-import { Address as BindingAddress, Flag, Outgoing } from '@/bindings/github.com/atterpac/email/internal/model/models'
+import * as Mailboxes from '../bindings/github.com/atterpac/email/cmd/email/mailboxes'
+import * as Messages from '../bindings/github.com/atterpac/email/cmd/email/messages'
+import * as Mutations from '../bindings/github.com/atterpac/email/cmd/email/mutations'
+import * as Compose from '../bindings/github.com/atterpac/email/cmd/email/compose'
+import * as Snooze from '../bindings/github.com/atterpac/email/cmd/email/snooze'
+import { Address as BindingAddress, Flag, Outgoing } from '../bindings/github.com/atterpac/email/internal/model/models'
 import type {
   Account as BindingAccount,
   Mailbox as BindingMailbox,
   Message as BindingMessage,
   Part as BindingPart,
   ThreadListItem,
-} from '@/bindings/github.com/atterpac/email/pkg/email/models'
+} from '../bindings/github.com/atterpac/email/internal/email/models'
 import type { Account, Address, Category, ComposeDraft, Conversation, Label, Mailbox, MailClient, Thread, ThreadMessage } from './types'
 
 const FLAG_SEEN = Flag.FlagSeen
@@ -22,11 +26,11 @@ const ROLE_NAMES: Record<number, string | undefined> = {
 const LABEL_COLORS = ['#5e54c0', '#c0694f', '#5b8a6f', '#787282', '#b18444', '#4f8aa8']
 
 export async function createWailsMailClient(preferredAccountId?: string): Promise<MailClient> {
-  const accounts = await Client.Accounts()
+  const accounts = await Mailboxes.Accounts()
   const account = accounts.find((item) => item.ID === preferredAccountId) ?? accounts[0]
   if (!account) throw new Error('No configured email account found.')
 
-  const mailboxes = await Client.Mailboxes(account.ID)
+  const mailboxes = await Mailboxes.Mailboxes(account.ID)
   return new WailsMailClient(account, mailboxes)
 }
 
@@ -43,24 +47,28 @@ class WailsMailClient implements MailClient {
   }
 
   async listMailboxes(): Promise<Mailbox[]> {
-    this.mailboxes = await Client.Mailboxes(this.account.ID)
+    this.mailboxes = await Mailboxes.Mailboxes(this.account.ID)
     return this.mailboxes.map(normalizeMailbox)
   }
 
   async createMailbox(name: string): Promise<Mailbox> {
-    return normalizeMailbox(await Client.CreateMailbox(this.account, name))
+    return normalizeMailbox(await Mailboxes.CreateMailbox(this.account, name))
   }
 
   async renameMailbox(id: string, newName: string): Promise<Mailbox> {
-    return normalizeMailbox(await Client.RenameMailbox(this.account, id, newName))
+    return normalizeMailbox(await Mailboxes.RenameMailbox(this.account, id, newName))
+  }
+
+  async setMailboxIcon(id: string, icon: string, weight: string, color: string): Promise<Mailbox> {
+    return normalizeMailbox(await Mailboxes.SetMailboxIcon(this.account.ID, id, icon, weight, color))
   }
 
   async deleteMailbox(id: string): Promise<void> {
-    await Client.DeleteMailbox(this.account, id)
+    await Mailboxes.DeleteMailbox(this.account, id)
   }
 
   async listLabels(): Promise<Label[]> {
-    this.mailboxes = await Client.Mailboxes(this.account.ID)
+    this.mailboxes = await Mailboxes.Mailboxes(this.account.ID)
     return this.mailboxes
       .filter((mailbox) => !ROLE_NAMES[mailbox.Role] || mailbox.Role === 0)
       .map((mailbox, index) => labelFromMailbox(mailbox, index))
@@ -69,11 +77,22 @@ class WailsMailClient implements MailClient {
   async listConversations(mailboxId: string): Promise<Conversation[]> {
     const mailbox = this.mailboxes.find((item) => item.ID === mailboxId)
     if (mailbox?.Role === 1) {
-      const items = await Client.ConversationList(this.account.ID, 100)
+      const items = await Messages.ConversationList(this.account.ID, 100)
       if (items.length) return items.map(conversationFromThreadListItem)
     }
 
-    let messages = await Client.MailboxMessages(this.account.ID, mailboxId, 100)
+    let messages = await Messages.MailboxMessages(this.account.ID, mailboxId, 100)
+    if (!messages.length) {
+      // Only the inbox syncs in the background; other folders are pulled on
+      // demand the first time they're opened. Without this they spin and show
+      // empty because nothing is ever syncing them.
+      try {
+        await Messages.SyncOnce(this.account, mailboxId)
+      } catch (error) {
+        console.warn('on-demand folder sync failed', mailboxId, error)
+      }
+      messages = await Messages.MailboxMessages(this.account.ID, mailboxId, 100)
+    }
     if (!messages.length && (mailbox?.Total ?? 0) > 0) {
       messages = await waitForMailboxMessages(this.account.ID, mailboxId)
     }
@@ -81,20 +100,20 @@ class WailsMailClient implements MailClient {
   }
 
   async preloadMailboxBodies(mailboxId: string, limit = 20): Promise<number> {
-    return Client.PreloadMailboxBodies(this.account, mailboxId, limit)
+    return Messages.PreloadMailboxBodies(this.account, mailboxId, limit)
   }
 
   async reclassifyMailbox(mailboxId: string, limit = 100): Promise<number> {
-    return Client.ReclassifyMailbox(this.account.ID, mailboxId, limit)
+    return Messages.ReclassifyMailbox(this.account.ID, mailboxId, limit)
   }
 
   async searchConversations(query: string): Promise<Conversation[]> {
-    const messages = await Client.Search(this.account.ID, query, 100)
+    const messages = await Messages.Search(this.account.ID, query, 100)
     return conversationsFromMessages(messages)
   }
 
   async getThread(threadId: string): Promise<Thread> {
-    const messages = await Client.ThreadMessages(this.account.ID, threadId)
+    const messages = await Messages.ThreadMessages(this.account.ID, threadId)
     const threadMessages = await Promise.all(messages.map((message, index) => this.normalizeThreadMessage(message, index === messages.length - 1)))
     const conversation = conversationFromThreadMessages(threadId, this.account.ID, threadMessages, messages)
     if (conversation.unread) {
@@ -105,43 +124,60 @@ class WailsMailClient implements MailClient {
   }
 
   async archiveThread(threadId: string): Promise<void> {
-    await Client.Archive(this.account, await this.threadMessageIds(threadId))
+    await Mutations.Archive(this.account, await this.threadMessageIds(threadId))
   }
 
   async snoozeThread(threadId: string, until?: string): Promise<void> {
     const fallback = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-    await Client.Snooze(this.account, await this.threadMessageIds(threadId), until ?? fallback)
+    await Snooze.Snooze(this.account, await this.threadMessageIds(threadId), until ?? fallback)
+  }
+
+  async moveThread(threadId: string, mailboxId: string): Promise<void> {
+    await Mutations.Move(this.account, await this.threadMessageIds(threadId), mailboxId)
+  }
+
+  async applyLabel(threadId: string, labelId: string): Promise<void> {
+    await Mutations.ApplyLabels(this.account, await this.threadMessageIds(threadId), [labelId], [])
+  }
+
+  // Labels are backed by mailboxes here, so creating one creates a mailbox and
+  // maps it back to the Label shape the UI expects.
+  async createLabel(name: string): Promise<Label> {
+    const created = await Mailboxes.CreateMailbox(this.account, name)
+    this.mailboxes = await Mailboxes.Mailboxes(this.account.ID)
+    const index = Math.max(0, this.mailboxes.findIndex((mailbox) => mailbox.ID === created.ID))
+    return labelFromMailbox(created, index)
   }
 
   async toggleStar(threadId: string, on = true): Promise<void> {
-    await Client.Star(this.account, await this.threadMessageIds(threadId), on)
+    await Mutations.Star(this.account, await this.threadMessageIds(threadId), on)
   }
 
   async markThreadRead(threadId: string, read: boolean): Promise<void> {
-    await Client.MarkRead(this.account, await this.threadMessageIds(threadId), read)
+    await Mutations.MarkRead(this.account, await this.threadMessageIds(threadId), read)
   }
 
   async saveDraft(draft: ComposeDraft): Promise<ComposeDraft> {
-    const id = await Client.SaveDraft(this.account.ID, draft.id, outgoingFromDraft(this.account, draft))
+    const id = await Compose.SaveDraft(this.account.ID, draft.id, outgoingFromDraft(this.account, draft))
     return { ...draft, id, updatedAt: new Date().toISOString() }
   }
 
   async sendDraft(draft: ComposeDraft): Promise<void> {
-    await Client.Send(this.account, outgoingFromDraft(this.account, draft))
-    if (draft.id) await Client.DiscardDraft(this.account.ID, draft.id).catch(() => undefined)
+    await Compose.Send(this.account, outgoingFromDraft(this.account, draft))
+    if (draft.id) await Compose.DiscardDraft(this.account.ID, draft.id).catch(() => undefined)
   }
 
   async discardDraft(draftId: string): Promise<void> {
-    await Client.DiscardDraft(this.account.ID, draftId)
+    await Compose.DiscardDraft(this.account.ID, draftId)
   }
 
   private async threadMessageIds(threadId: string) {
-    const messages = await Client.ThreadMessages(this.account.ID, threadId)
+    const messages = await Messages.ThreadMessages(this.account.ID, threadId)
     return messages.map((message) => message.ID)
   }
 
   private async normalizeThreadMessage(message: BindingMessage, expanded: boolean): Promise<ThreadMessage> {
-    const parts = await Client.MessageBody(this.account, message.ID).catch((error) => {
+    const parts = await Messages.MessageBody(this.account, message.ID).catch((error) => {
       console.warn('Unable to load message body', message.ID, error)
       return message.Parts?.length ? message.Parts : [{
         ContentType: 'text/plain',
@@ -177,7 +213,7 @@ async function waitForMailboxMessages(accountId: string, mailboxId: string) {
   const deadline = Date.now() + 5000
   while (Date.now() < deadline) {
     await new Promise((resolve) => window.setTimeout(resolve, 500))
-    const messages = await Client.MailboxMessages(accountId, mailboxId, 100)
+    const messages = await Messages.MailboxMessages(accountId, mailboxId, 100)
     if (messages.length) return messages
   }
   return []
@@ -194,6 +230,9 @@ function normalizeMailbox(mailbox: BindingMailbox): Mailbox {
     role: ROLE_NAMES[mailbox.Role],
     unread: mailbox.Unread,
     total: mailbox.Total,
+    icon: mailbox.Icon || undefined,
+    iconWeight: mailbox.IconWeight || undefined,
+    iconColor: mailbox.IconColor || undefined,
   }
 }
 

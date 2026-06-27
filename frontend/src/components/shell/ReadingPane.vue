@@ -1,19 +1,42 @@
 <script setup lang="ts">
 // Right pane (persistent): compose form when composing, otherwise the selected
 // thread with its reply panel, otherwise an empty placeholder.
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import { useExternalEmailLinks } from '../../composables/useExternalEmailLinks'
 import { useMailShell } from '../../composables/useMailShell'
-import { useSettings } from '../../composables/useSettings'
-import { avatarStyle, formatDate, initials, labelFor, participantLine, renderEmailHtml } from '../../mail/format'
-import MarkdownEditor from '../editor/MarkdownEditor.vue'
-import { PhStar, PhArchive, PhClock, PhEnvelopeOpen, PhCaretUp, PhCaretDown, PhArrowLeft, PhArrowSquareOut } from '@phosphor-icons/vue'
+import { useThreadFind } from '../../composables/useThreadFind'
+import { formatDate, labelFor } from '../../mail/format'
+import ReplyPanel from './ReplyPanel.vue'
+import ThreadMessage from './ThreadMessage.vue'
+import { PhArchive, PhClock, PhEnvelopeOpen, PhArrowBendUpLeft, PhArrowLeft, PhArrowSquareOut, PhTray, PhSpinnerGap } from '@phosphor-icons/vue'
 
 const emit = defineEmits<{ (e: 'back-to-list'): void }>()
 const s = useMailShell()
-const settings = useSettings()
 const previewLabel = computed(() => labelFor(s.selectedConversation.value, s.labels.value))
 const threadScroll = ref<HTMLElement | null>(null)
-const replyEditor = ref<InstanceType<typeof MarkdownEditor> | null>(null)
+const replyPanel = ref<InstanceType<typeof ReplyPanel> | null>(null)
+const activeMailboxName = computed(() => s.mailboxes.value.find((mailbox) => mailbox.id === s.activeMailbox.value)?.name ?? 'mail')
+const focusedSenderName = computed(() => s.focusedThreadMessage.value?.from.name || s.focusedThreadMessage.value?.from.addr || 'message')
+const focusedSenderEmail = computed(() => s.focusedThreadMessage.value?.from.addr ?? '')
+const focusedSenderPath = computed(() => {
+  const base = focusedSenderEmail.value.split('@')[0] || focusedSenderName.value
+  return base.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'message'
+})
+
+useExternalEmailLinks()
+
+// Let in-thread find (`/`) scroll this region to each match.
+const threadFind = useThreadFind()
+watch(threadScroll, (el) => threadFind.register(el), { immediate: true })
+
+// Keep the focused message (shift-J/K) in view.
+watch(() => s.focusedMessageId.value, (id) => {
+  if (!id) return
+  nextTick(() => {
+    const row = threadScroll.value?.querySelector<HTMLElement>(`[data-message-id="${id}"]`)
+    row?.scrollIntoView({ block: 'nearest', behavior: 'auto' })
+  })
+})
 
 function scrollThread(delta: number | 'top' | 'bottom') {
   const target = threadScroll.value
@@ -23,10 +46,10 @@ function scrollThread(delta: number | 'top' | 'bottom') {
   target.scrollBy({ top: delta * 72, behavior: 'auto' })
 }
 function focusReply() {
-  nextTick(() => replyEditor.value?.focus())
+  replyPanel.value?.focusReply()
 }
-function openReply(kind: 'reply' | 'replyAll' | 'forward') {
-  s.openReply(kind)
+function openReply() {
+  s.openReply('reply')
   focusReply()
 }
 
@@ -39,49 +62,29 @@ defineExpose({ scrollThread, focusReply })
     <template v-if="s.selectedThread.value">
       <header class="thread-header">
         <button class="mobile-back" type="button" @click.stop="emit('back-to-list')"><PhArrowLeft :size="15" /> Inbox</button>
-        <div class="thread-title"><h1>{{ s.selectedThread.value.subject }}</h1><p>{{ s.selectedThread.value.messageCount }} messages · {{ participantLine(s.selectedThread.value) }}</p></div>
+        <div class="thread-title">
+          <div class="thread-path"><PhTray :size="14" /> ~/{{ activeMailboxName.toLowerCase() }}/{{ focusedSenderPath }}</div>
+          <h1>{{ s.selectedThread.value.subject }}</h1>
+          <p>focused on <b>{{ focusedSenderName }}</b><span v-if="focusedSenderEmail"> · {{ focusedSenderEmail }}</span></p>
+        </div>
         <div class="thread-actions">
-          <button class="ghost-button" type="button" @click="s.toggleStar()"><PhStar :size="14" :weight="s.selectedThread.value?.starred ? 'fill' : 'regular'" /> Star</button>
-          <button class="ghost-button" type="button" @click="s.archiveThread()"><PhArchive :size="14" /> Archive <kbd>e</kbd></button>
-          <button class="ghost-button" type="button" @click="s.snoozeThread()"><PhClock :size="14" /> Snooze <kbd>s</kbd></button>
-          <button class="ghost-button" type="button" @click="s.toggleRead()"><PhEnvelopeOpen :size="14" /> Unread <kbd>u</kbd></button>
+          <button class="thread-action" type="button" @click="s.archiveThread()"><PhArchive :size="14" /> Archive <kbd>e</kbd></button>
+          <button class="thread-action" type="button" @click="s.snoozeThread()"><PhClock :size="14" /> Snooze <kbd>s</kbd></button>
+          <button class="thread-action" type="button" @click="s.toggleRead()"><PhEnvelopeOpen :size="14" /> Unread <kbd>u</kbd></button>
+          <button class="thread-action primary" type="button" @click="openReply"><PhArrowBendUpLeft :size="15" /> Reply <kbd>r</kbd></button>
         </div>
       </header>
       <div ref="threadScroll" class="thread-messages">
-        <article v-for="message in s.threadMessages.value" :key="message.id">
-          <span class="avatar" :style="avatarStyle(message.from)">{{ initials(message.from) }}</span>
-          <div>
-            <header><strong>{{ message.from.name || message.from.addr }}</strong><span>{{ message.from.addr }}</span><time>{{ formatDate(message.date) }}</time></header>
-            <div v-if="message.expanded" class="message-body" @click="message.expanded = false">
-              <iframe v-if="message.html" class="email-html-frame" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" :srcdoc="renderEmailHtml(message.html)" />
-              <template v-else><p v-for="paragraph in message.body" :key="paragraph">{{ paragraph }}</p></template>
-            </div>
-            <p v-else class="snippet" @click="message.expanded = true">{{ message.snippet }}</p>
-          </div>
-        </article>
-      </div>
-      <footer class="reply-panel" :class="{ expanded: s.replyExpanded.value }">
-        <button v-if="s.replyOpen.value" class="reply-expand-toggle" type="button" @click="s.replyExpanded.value = !s.replyExpanded.value"><PhCaretDown v-if="s.replyExpanded.value" :size="14" /><PhCaretUp v-else :size="14" /></button>
-        <div class="reply-tabs" :class="{ compact: !s.replyOpen.value }">
-          <button :class="{ active: s.replyMode.value === 'reply' }" type="button" @click="openReply('reply')">Reply</button>
-          <button :class="{ active: s.replyMode.value === 'replyAll' }" type="button" @click="openReply('replyAll')">Reply all</button>
-          <button :class="{ active: s.replyMode.value === 'forward' }" type="button" @click="openReply('forward')">Forward</button>
-          <span>{{ s.replyMode.value === 'forward' ? 'forward draft' : `to ${s.selectedThread.value.from.name || s.selectedThread.value.from.addr}` }}</span>
-        </div>
-        <MarkdownEditor
-          v-if="s.replyOpen.value"
-          ref="replyEditor"
-          v-model:body="s.draft.value.body"
-          variant="reply"
-          placeholder="Write your reply...  (⌘↵ to send)"
-          :status="s.status.value"
-          :reset-key="s.draft.value.id"
-          :vim="settings.vimMode"
-          :expanded="s.replyExpanded.value"
-          @send="s.sendDraft()"
-          @attach="s.attachMock()"
+        <ThreadMessage
+          v-for="message in s.threadMessages.value"
+          :key="message.id"
+          :message="message"
+          :focused="s.focusedMessageId.value === message.id"
+          @toggle-expanded="s.toggleMessageExpanded"
+          @focus-message="s.focusMessage"
         />
-      </footer>
+      </div>
+      <ReplyPanel ref="replyPanel" />
     </template>
 
     <!-- Empty -->
@@ -100,5 +103,24 @@ defineExpose({ scrollThread, focusReply })
     <div v-else class="reading-empty">
       <p>No conversation selected.</p>
     </div>
+
+    <!-- Thread fetch in flight (bodies loading) — overlay, outside the v-if chain -->
+    <div v-if="s.threadLoading.value" class="thread-loading">
+      <PhSpinnerGap :size="22" class="spin" />
+      <span>Loading conversation…</span>
+    </div>
   </section>
 </template>
+
+<style scoped>
+.reading-pane { position: relative; }
+.thread-loading {
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  background: color-mix(in oklab, var(--surface) 72%, transparent);
+  backdrop-filter: blur(2px);
+  color: var(--text-mut); font: 12px "JetBrains Mono", ui-monospace, monospace;
+}
+.spin { color: var(--accent); animation: reading-spin 0.8s linear infinite; }
+@keyframes reading-spin { to { transform: rotate(360deg); } }
+</style>

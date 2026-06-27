@@ -1,17 +1,19 @@
 <script setup lang="ts">
-// Flat sidebar with selectable style + nav-layout presets (R2). Reads shared
+// Flat sidebar with selectable style + nav-layout presets. Reads shared
 // state from the mail shell composable and presentation prefs from settings.
 import { computed, nextTick, ref } from 'vue'
 import { useMailShell } from '../../composables/useMailShell'
 import { useSettings } from '../../composables/useSettings'
-import { initials } from '../../mail/format'
 import type { Mailbox } from '../../mail/types'
+import { folderIconComponent, type FolderEdit, type FolderIconPref, type FolderIconWeight } from '../../mail/folderIcons'
 import type { ConfiguredAccount } from '../../onboarding/client'
 import AddAccountModal from '../overlays/AddAccountModal.vue'
-import { PhArchiveBox, PhCaretDown, PhCheck, PhEnvelope, PhEyeSlash, PhNotePencil, PhPaperPlaneTilt, PhPencilSimple, PhPlus, PhStar, PhTag, PhTrash, PhTray, PhUserPlus, PhX } from '@phosphor-icons/vue'
+import FolderIconPicker from './FolderIconPicker.vue'
+import { PhArchiveBox, PhCaretDown, PhCheck, PhDotsThree, PhEnvelope, PhEyeSlash, PhGearSix, PhNotePencil, PhPaperPlaneTilt, PhPencilSimple, PhPlus, PhSmiley, PhStar, PhTrash, PhTray, PhX } from '@phosphor-icons/vue'
 
 const s = useMailShell()
 const settings = useSettings()
+defineEmits<{ (e: 'open-settings'): void }>()
 
 // Account switcher / add / remove.
 const accountMenuOpen = ref(false)
@@ -26,6 +28,14 @@ function openAddAccount() {
   accountMenuOpen.value = false
   addAccountOpen.value = true
 }
+function toggleAccountMenu() {
+  if (settings.navCollapsed) {
+    settings.navCollapsed = false
+    accountMenuOpen.value = true
+    return
+  }
+  accountMenuOpen.value = !accountMenuOpen.value
+}
 async function confirmRemoveAccount(id: string) {
   removingAccountId.value = null
   accountMenuOpen.value = false
@@ -33,8 +43,7 @@ async function confirmRemoveAccount(id: string) {
 }
 
 // Group headings are noise in the plain/rail layouts.
-const showHeads = computed(() => settings.navLayout !== 'plain' && settings.navLayout !== 'rail')
-const showIcons = computed(() => settings.navLayout === 'icons')
+const showHeads = computed(() => !settings.navCollapsed && settings.navLayout !== 'plain' && settings.navLayout !== 'rail')
 const showAccounts = computed(() => settings.navLayout === 'accounts')
 const canCrud = computed(() => !!s.client.value?.createMailbox)
 const visibleMailboxes = computed(() => s.mailboxes.value.filter((mailbox) => !settings.hiddenMailboxIds.includes(mailbox.id)))
@@ -42,8 +51,6 @@ const visibleMailboxes = computed(() => s.mailboxes.value.filter((mailbox) => !s
 // Folder CRUD UI state (inline inputs — webview-friendly, no native dialogs).
 const creating = ref(false)
 const newName = ref('')
-const renamingId = ref<string | null>(null)
-const editName = ref('')
 const pendingDelete = ref<string | null>(null)
 
 function focusInput(selector: string) {
@@ -66,19 +73,11 @@ function startCreate() {
 async function submitCreate() {
   const name = newName.value.trim()
   creating.value = false
-  if (name) await s.createMailbox(name)
-}
-function startRename(mailbox: Mailbox) {
-  pendingDelete.value = null
-  renamingId.value = mailbox.id
-  editName.value = mailbox.name
-  focusInput('.folder-edit.rename input')
-}
-async function submitRename() {
-  const id = renamingId.value
-  const name = editName.value.trim()
-  renamingId.value = null
-  if (id && name) await s.renameMailbox(id, name)
+  if (!name) return
+  await s.createMailbox(name)
+  // Offer to pick an icon right after the folder appears.
+  const created = s.mailboxes.value.find((mailbox) => mailbox.name === name)
+  if (created) openIconPicker(created)
 }
 async function confirmDelete(id: string) {
   pendingDelete.value = null
@@ -94,7 +93,10 @@ function hideMailbox(id: string) {
 function glyph(mailbox: Mailbox) {
   return (mailbox.name[0] ?? '•').toUpperCase()
 }
+// User-assigned icon (persisted on the mailbox) wins; otherwise role/name.
 function mailboxIcon(mailbox: Mailbox) {
+  const custom = folderIconComponent(mailbox.icon)
+  if (custom) return custom
   const name = mailbox.name.toLowerCase()
   if (mailbox.role === 'inbox' || name.includes('inbox')) return PhTray
   if (mailbox.role === 'sent' || name.includes('sent')) return PhPaperPlaneTilt
@@ -103,32 +105,63 @@ function mailboxIcon(mailbox: Mailbox) {
   if (name.includes('star')) return PhStar
   return PhEnvelope
 }
-function openLabel(name: string) {
-  s.query.value = `label:${name}`
-  void s.openSearch()
+function mailboxIconWeight(mailbox: Mailbox): FolderIconWeight {
+  return (mailbox.iconWeight as FolderIconWeight) || 'regular'
+}
+function mailboxIconColor(mailbox: Mailbox) {
+  return mailbox.iconColor || ''
+}
+function mailboxPref(mailbox: Mailbox): FolderIconPref | null {
+  if (!mailbox.icon) return null
+  return { icon: mailbox.icon, weight: mailboxIconWeight(mailbox), color: mailbox.iconColor || '' }
+}
+
+// Per-folder context menu (Rename / Change icon / Hide / Delete).
+const menuFor = ref<string | null>(null)
+function toggleMenu(id: string) { menuFor.value = menuFor.value === id ? null : id }
+
+// Folder editor (rename + icon + weight + color in one modal).
+const iconPickerFor = ref<Mailbox | null>(null)
+function openIconPicker(mailbox: Mailbox) {
+  menuFor.value = null
+  iconPickerFor.value = mailbox
+}
+async function assignIcon(result: FolderEdit) {
+  const mailbox = iconPickerFor.value
+  iconPickerFor.value = null
+  if (!mailbox) return
+  const { name, icon, weight, color } = result
+  // Set the icon first so a rename that changes the mailbox id carries it over.
+  await s.setMailboxIcon(mailbox.id, icon, weight, color)
+  if (name && name !== mailbox.name && isUserFolder(mailbox)) await s.renameMailbox(mailbox.id, name)
+}
+function accountSlug(acc: Pick<ConfiguredAccount, 'name' | 'email'> | null | undefined) {
+  const base = acc?.email?.split('@')[0] || acc?.name || 'account'
+  return base.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'account'
 }
 </script>
 
 <template>
   <aside class="sidebar" :class="[`sidebar-${settings.sidebarStyle}`, `nav-${settings.navLayout}`]">
     <div class="account-wrap">
-      <button class="account" type="button" @click="accountMenuOpen = !accountMenuOpen">
-        <span class="avatar sm">{{ s.account.value ? initials({ name: s.account.value.name, addr: s.account.value.email }) : 'me' }}</span>
-        <span class="acctcol">
-          <b>{{ s.account.value?.name || 'Account' }}</b>
-          <small>{{ s.account.value?.email }}</small>
+      <button class="account account-command-trigger" type="button" @click="toggleAccountMenu">
+        <span class="cmdprompt">~/</span>
+        <span class="cmdpath">
+          <b>{{ accountSlug(s.account.value) }}</b>
         </span>
         <PhCaretDown class="chev" :size="12" />
       </button>
 
       <template v-if="accountMenuOpen">
         <div class="menu-scrim" @click="accountMenuOpen = false; removingAccountId = null" />
-        <div class="account-menu">
-          <p class="menu-head">Accounts</p>
+        <div class="account-menu account-path-menu">
+          <p class="menu-head">~/accounts</p>
           <div v-for="acc in s.configuredAccounts.value" :key="acc.id" class="menu-row">
-            <button class="menu-item" :class="{ active: s.account.value?.id === acc.id }" type="button" @click="switchAccount(acc)">
-              <span class="avatar sm">{{ initials({ name: acc.name, addr: acc.email }) }}</span>
-              <span class="acctcol"><b>{{ acc.name || acc.email }}</b><small>{{ acc.email }}</small></span>
+            <button class="menu-item path-menu-item" :class="{ active: s.account.value?.id === acc.id }" type="button" @click="switchAccount(acc)">
+              <span class="path-main">
+                <b>{{ accountSlug(acc) }}</b>
+              </span>
+              <span class="path-meta">{{ acc.email }}</span>
               <PhCheck v-if="s.account.value?.id === acc.id" :size="13" class="menu-check" />
             </button>
             <template v-if="removingAccountId === acc.id">
@@ -137,10 +170,19 @@ function openLabel(name: string) {
             </template>
             <button v-else class="folder-mini" type="button" title="Remove account" @click="removingAccountId = acc.id"><PhTrash :size="13" /></button>
           </div>
-          <button class="menu-add" type="button" @click="openAddAccount"><PhUserPlus :size="15" /> Add account</button>
+          <button class="menu-add path-menu-add" type="button" @click="openAddAccount"><PhPlus :size="15" /> ~/add-account</button>
         </div>
       </template>
     </div>
+
+    <button
+      class="nav-edge-toggle"
+      type="button"
+      :title="settings.navCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+      @click="settings.navCollapsed = !settings.navCollapsed"
+    >
+      <span aria-hidden="true">{{ settings.navCollapsed ? '::' : '::' }}</span>
+    </button>
 
     <template v-if="showAccounts && s.configuredAccounts.value.length > 1">
       <p v-if="showHeads" class="grouphead">Accounts</p>
@@ -160,20 +202,15 @@ function openLabel(name: string) {
     </div>
     <nav class="navgroup">
       <div v-for="mailbox in visibleMailboxes" :key="mailbox.id" class="navrow">
-        <form v-if="renamingId === mailbox.id" class="folder-edit rename" @submit.prevent="submitRename">
-          <input v-model="editName" @keydown.esc="renamingId = null" @blur="submitRename" />
-          <button type="submit" class="folder-mini" title="Save"><PhCheck :size="13" /></button>
-        </form>
-        <template v-else>
-          <button
+        <button
             class="navitem"
             :class="{ active: !s.searchActive.value && s.activeMailbox.value === mailbox.id }"
             type="button"
             :title="mailbox.name"
             @click="s.openMailbox(mailbox.id)"
           >
-            <span v-if="showIcons" class="navicon"><component :is="mailboxIcon(mailbox)" :size="14" /></span>
-            <span v-else-if="settings.navLayout === 'rail'" class="navicon">{{ glyph(mailbox) }}</span>
+            <span v-if="settings.navLayout === 'rail'" class="navicon">{{ glyph(mailbox) }}</span>
+            <span v-else class="navicon" :style="{ color: mailboxIconColor(mailbox) || undefined }"><component :is="mailboxIcon(mailbox)" :size="16" :weight="mailboxIconWeight(mailbox)" /></span>
             <span class="navlabel">{{ mailbox.name }}</span>
             <span v-if="pendingDelete !== mailbox.id && mailbox.unread" class="dot">{{ mailbox.unread }}</span>
           </button>
@@ -182,13 +219,20 @@ function openLabel(name: string) {
             <button class="folder-mini" type="button" title="Cancel" @click="pendingDelete = null"><PhX :size="13" /></button>
           </div>
           <div v-else class="navactions">
-            <button class="folder-mini" type="button" title="Hide folder" @click="hideMailbox(mailbox.id)"><PhEyeSlash :size="13" /></button>
-            <template v-if="isUserFolder(mailbox)">
-              <button class="folder-mini" type="button" title="Rename folder" @click="startRename(mailbox)"><PhPencilSimple :size="13" /></button>
-              <button class="folder-mini" type="button" title="Delete folder" @click="pendingDelete = mailbox.id"><PhTrash :size="13" /></button>
-            </template>
+            <button class="folder-mini" type="button" title="Folder actions" @click="toggleMenu(mailbox.id)"><PhDotsThree :size="14" /></button>
           </div>
-        </template>
+          <template v-if="menuFor === mailbox.id">
+            <div class="menu-scrim" @click="menuFor = null" />
+            <div class="folder-menu">
+              <button type="button" @click="openIconPicker(mailbox)"><PhPencilSimple :size="14" /> Rename</button>
+              <button type="button" @click="openIconPicker(mailbox)"><PhSmiley :size="14" /> Change icon</button>
+              <button type="button" @click="menuFor = null; hideMailbox(mailbox.id)"><PhEyeSlash :size="14" /> Hide</button>
+              <template v-if="isUserFolder(mailbox)">
+                <hr />
+                <button type="button" class="danger" @click="menuFor = null; pendingDelete = mailbox.id"><PhTrash :size="14" /> Delete</button>
+              </template>
+            </div>
+          </template>
       </div>
       <form v-if="creating" class="folder-edit create" @submit.prevent="submitCreate">
         <input v-model="newName" placeholder="New folder name" @keydown.esc="creating = false" @blur="submitCreate" />
@@ -198,14 +242,27 @@ function openLabel(name: string) {
 
     <p v-if="showHeads" class="grouphead">Labels</p>
     <nav class="navgroup">
-      <button v-for="label in s.labels.value" :key="label.id" class="navitem label" type="button" :title="label.name" @click="openLabel(label.name)">
-        <span v-if="showIcons" class="navicon label-icon"><PhTag :size="14" /></span>
-        <span v-else class="swatch" :style="{ backgroundColor: label.swatch }" />
+      <button v-for="label in s.labels.value" :key="label.id" class="navitem label" type="button" :title="label.name" :class="{ active: !s.searchActive.value && s.activeMailbox.value === label.id }" @click="s.openMailbox(label.id)">
+        <span class="navicon"><span class="swatch" :style="{ backgroundColor: label.swatch }" /></span>
         <span class="navlabel">{{ label.name }}</span>
         <span class="dot soft">{{ label.count }}</span>
       </button>
     </nav>
 
+    <div class="sidebar-foot">
+      <button class="navitem settings-navitem" type="button" title="Settings" @click="$emit('open-settings')">
+        <span class="navicon"><PhGearSix :size="16" /></span>
+        <span class="navlabel">Settings</span>
+      </button>
+    </div>
+
     <AddAccountModal v-if="addAccountOpen" @close="addAccountOpen = false" />
+    <FolderIconPicker
+      v-if="iconPickerFor"
+      :folder-name="iconPickerFor.name"
+      :initial="mailboxPref(iconPickerFor)"
+      @assign="assignIcon"
+      @close="iconPickerFor = null"
+    />
   </aside>
 </template>

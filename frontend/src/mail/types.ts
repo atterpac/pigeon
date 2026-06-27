@@ -1,6 +1,6 @@
 export type Address = { name: string; addr: string }
 export type Account = { id: string; email: string; name: string }
-export type Mailbox = { id: string; name: string; role?: string; unread: number; total: number }
+export type Mailbox = { id: string; name: string; role?: string; unread: number; total: number; icon?: string; iconWeight?: string; iconColor?: string }
 export type Label = { id: string; name: string; count: number; swatch: string; bg: string; fg: string }
 export type Category = 'primary' | 'promotions' | 'updates' | 'social' | 'forums'
 export type Conversation = {
@@ -56,6 +56,7 @@ export type MailClient = {
   listMailboxes(): Promise<Mailbox[]>
   createMailbox?(name: string): Promise<Mailbox>
   renameMailbox?(id: string, newName: string): Promise<Mailbox>
+  setMailboxIcon?(id: string, icon: string, weight: string, color: string): Promise<Mailbox>
   deleteMailbox?(id: string): Promise<void>
   listLabels(): Promise<Label[]>
   listConversations(mailboxId: string): Promise<Conversation[]>
@@ -65,6 +66,9 @@ export type MailClient = {
   getThread(threadId: string): Promise<Thread>
   archiveThread(threadId: string): Promise<void>
   snoozeThread(threadId: string, until?: string): Promise<void>
+  moveThread?(threadId: string, mailboxId: string): Promise<void>
+  applyLabel?(threadId: string, labelId: string): Promise<void>
+  createLabel?(name: string): Promise<Label>
   toggleStar(threadId: string, on?: boolean): Promise<void>
   markThreadRead(threadId: string, read: boolean): Promise<void>
   saveDraft(draft: ComposeDraft): Promise<ComposeDraft>

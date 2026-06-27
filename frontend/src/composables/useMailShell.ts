@@ -1,16 +1,19 @@
-// Shared mail-shell state + actions, extracted from the old App.vue.
+// Shared mail-shell state + actions for the app-level mail workflow.
 // Singleton: every component that calls useMailShell() gets the same instance,
-// so state is shared without prop-drilling. Editor-internal concerns (caret,
-// vim mode, formatting) live in components/editor/MarkdownEditor.vue, not here.
+// so state is shared without prop-drilling.
 import { computed, nextTick, ref, watch } from 'vue'
+import { Events } from '@wailsio/runtime'
 import { createMailClient } from '../mail/client'
-import type { Account, Category, ComposeDraft, Conversation, Label, Mailbox, MailClient, ThreadMessage } from '../mail/types'
+import { applyPollInterval } from '../mail/syncSettings'
+import { useSettings } from './useSettings'
+import { useThreadFind } from './useThreadFind'
+import type { Account, Category, Conversation, Label, Mailbox, MailClient, ThreadMessage } from '../mail/types'
 import { createOnboardingClient, type ConfiguredAccount, type SetupMethod } from '../onboarding/client'
 import { errorMessage, isToday, parseAddresses } from '../mail/format'
+import { newDraft, replyDraft, type ReplyMode } from '../mail/drafts'
 
 export type AppPhase = 'starting' | 'onboarding' | 'mail'
 export type CategoryTab = Category | 'all'
-export type ReplyMode = 'reply' | 'replyAll' | 'forward'
 export type FocusPane = 'list' | 'thread'
 
 export const categoryTabs: Array<{ id: CategoryTab; label: string }> = [
@@ -38,18 +41,31 @@ function createMailShell() {
   const conversations = ref<Conversation[]>([])
   const searchResults = ref<Conversation[]>([])
   const threadMessages = ref<ThreadMessage[]>([])
+  const focusedMessageId = ref('')
   const query = ref('from:github is:unread')
   const replyMode = ref<ReplyMode>('reply')
   const replyOpen = ref(false)
   const replyExpanded = ref(false)
   const focusPane = ref<FocusPane>('list')
   const status = ref('loading')
+  // True while a thread's messages/bodies are being fetched for the reading pane.
+  const threadLoading = ref(false)
+  // Monotonic token so a newer openThread cancels an older in-flight one.
+  let openSeq = 0
 
   // Overlay / pane modes (replaced the old `screen` enum).
   const composeOpen = ref(false)
   const searchActive = ref(false)
-  // Active command-line input: `/` search or `:` ex-command (vim layer).
-  const command = ref<{ kind: 'search' | 'ex'; text: string } | null>(null)
+  // Which-key command menu (assign thread → archive/snooze/label/move).
+  const commandMenuOpen = ref(false)
+  // Active command-line input: `/` search, `:` ex-command (vim layer), or
+  // `find` (in-thread find when the reading pane is focused).
+  const command = ref<{ kind: 'search' | 'ex' | 'find'; text: string } | null>(null)
+  const threadFind = useThreadFind()
+  // Expanded-state snapshot taken when find opens, so closing find restores the
+  // conversation to exactly how it looked before.
+  let findExpandedSnapshot: Map<string, boolean> | null = null
+  let changefeedOff: (() => void) | null = null
 
   const draft = ref(newDraft())
   const recipientInput = ref('')
@@ -72,23 +88,25 @@ function createMailShell() {
   const filteredConversations = computed(() => activeCategory.value === 'all'
     ? conversations.value
     : conversations.value.filter((conversation) => conversation.category === activeCategory.value))
-  const activeList = computed(() => (searchActive.value ? searchResults.value : filteredConversations.value))
-  const selectedConversation = computed(() => activeList.value[selectedIndex.value] ?? null)
   const unreadCount = computed(() => filteredConversations.value.filter((conversation) => conversation.unread).length)
   const todayConversations = computed(() => filteredConversations.value.filter((conversation) => isToday(conversation.lastAt)))
   const earlierConversations = computed(() => filteredConversations.value.filter((conversation) => !isToday(conversation.lastAt)))
+  const groupedConversations = computed(() => [...todayConversations.value, ...earlierConversations.value])
+  const activeList = computed(() => (searchActive.value ? searchResults.value : groupedConversations.value))
+  const selectedConversation = computed(() => activeList.value[selectedIndex.value] ?? null)
   const categoryCounts = computed(() => {
     const counts: Record<CategoryTab, number> = { all: conversations.value.length, primary: 0, promotions: 0, updates: 0, social: 0, forums: 0 }
     for (const conversation of conversations.value) counts[conversation.category] += 1
     return counts
   })
   const mode = computed(() => composeOpen.value ? 'COMPOSE' : searchActive.value ? 'SEARCH' : selectedThread.value ? 'THREAD' : 'NORMAL')
+  const focusedThreadMessage = computed(() => threadMessages.value.find((message) => message.id === focusedMessageId.value) ?? threadMessages.value.at(-1) ?? null)
   const statusHints = computed(() => {
     if (composeOpen.value) return '⌘↵ send · ⌘⇧A attach · esc discard'
     if (searchActive.value) return '↑↓ navigate · ↵ open · esc clear'
     if (selectedThread.value && focusPane.value === 'thread') return 'j k scroll · r reply · e archive · esc list'
     if (selectedThread.value) return 'j k move · ↵ open · tab thread · e archive'
-    return 'j k move · e archive · s snooze · c compose · ⌘K search'
+    return 'j k move · space cmd · e archive · s snooze · c compose · ⌘K search'
   })
 
   async function initializeApp() {
@@ -112,7 +130,27 @@ function createMailShell() {
     client.value = await createMailClient(configuredAccount?.id)
     account.value = configuredAccount ? accountFromConfigured(configuredAccount) : await client.value.getAccount()
     await refreshShell()
+    // Push the user's saved poll interval to the backend now that sync loops
+    // are running; the backend default applies until this lands.
+    if (client.value.source === 'wails') {
+      void applyPollInterval(useSettings().pollIntervalSeconds)
+      subscribeChangefeed()
+    }
     appPhase.value = 'mail'
+  }
+  // subscribeChangefeed reconciles the active view whenever the backend store
+  // changes (background sync pulling mail, flag/label/delete mutations). Events
+  // are best-effort hints, so we coalesce bursts and refetch rather than apply
+  // individual ids. Registered once; survives account switches.
+  function subscribeChangefeed() {
+    if (changefeedOff) return
+    let pending: ReturnType<typeof setTimeout> | null = null
+    changefeedOff = Events.On('store:change', (ev: { data?: { account?: string } }) => {
+      // Ignore changes for other accounts than the one on screen.
+      if (ev.data?.account && account.value && ev.data.account !== account.value.id) return
+      if (pending) return // already scheduled; coalesce the burst
+      pending = setTimeout(() => { pending = null; void reloadList() }, 250)
+    })
   }
   async function submitOnboarding(): Promise<boolean> {
     setupError.value = ''
@@ -183,6 +221,7 @@ function createMailShell() {
     selectedIndex.value = 0
     selectedThread.value = null
     threadMessages.value = []
+    focusedMessageId.value = ''
     replyOpen.value = false
     focusPane.value = 'list'
     composeOpen.value = false
@@ -196,7 +235,7 @@ function createMailShell() {
       const changed = await client.value.reclassifyMailbox?.(mailboxId, 100) ?? 0
       if (changed > 0 && activeMailbox.value === mailboxId && !searchActive.value) {
         conversations.value = await client.value.listConversations(mailboxId)
-        selectedIndex.value = Math.min(selectedIndex.value, Math.max(0, filteredConversations.value.length - 1))
+        selectedIndex.value = Math.min(selectedIndex.value, Math.max(0, activeList.value.length - 1))
         status.value = `categorized ${changed} conversations`
       } else if (activeMailbox.value === mailboxId && !searchActive.value) {
         status.value = 'categories checked'
@@ -208,6 +247,11 @@ function createMailShell() {
   function selectCategory(category: CategoryTab) {
     activeCategory.value = category
     selectedIndex.value = 0
+    focusPane.value = 'list'
+  }
+  function selectConversation(conversation: Conversation) {
+    const index = activeList.value.findIndex((item) => item.id === conversation.id)
+    selectedIndex.value = Math.max(0, index)
     focusPane.value = 'list'
   }
 
@@ -225,6 +269,11 @@ function createMailShell() {
     mailboxes.value = await client.value.listMailboxes()
     status.value = `renamed to ${renamed.name}`
     if (activeMailbox.value === id) await openMailbox(renamed.id)
+  }
+  async function setMailboxIcon(id: string, icon: string, weight: string, color: string) {
+    if (!client.value?.setMailboxIcon) return
+    await client.value.setMailboxIcon(id, icon, weight, color)
+    mailboxes.value = await client.value.listMailboxes()
   }
   async function deleteMailbox(id: string) {
     if (!client.value?.deleteMailbox) return
@@ -250,7 +299,7 @@ function createMailShell() {
   function removeListConversation(id: string) {
     conversations.value = conversations.value.filter((conversation) => conversation.id !== id)
     searchResults.value = searchResults.value.filter((conversation) => conversation.id !== id)
-    if (selectedThread.value?.id === id) { selectedThread.value = null; threadMessages.value = []; focusPane.value = 'list' }
+    if (selectedThread.value?.id === id) { selectedThread.value = null; threadMessages.value = []; focusedMessageId.value = ''; focusPane.value = 'list' }
     selectedIndex.value = Math.max(0, Math.min(selectedIndex.value, activeList.value.length - 1))
   }
   function bumpMailboxUnread(mailboxId: string, delta: number) {
@@ -269,33 +318,65 @@ function createMailShell() {
     if (!client.value || !threadId) return
     const wasUnread = conversations.value.find((c) => c.id === threadId)?.unread
       ?? searchResults.value.find((c) => c.id === threadId)?.unread
-    const thread = await client.value.getThread(threadId)
-    selectedThread.value = thread.conversation
-    threadMessages.value = thread.messages.map((message, index, messages) => ({ ...message, expanded: message.expanded || index === messages.length - 1 }))
-    composeOpen.value = false
-    replyOpen.value = false
-    replyExpanded.value = false
-    focusPane.value = 'thread'
-    status.value = 'thread loaded'
-    // getThread marks the thread read server-side; mirror that locally.
-    if (wasUnread) { patchListConversation(threadId, { unread: false }); bumpMailboxUnread(activeMailbox.value, -1) }
-    prepareReply('reply')
+    // Supersession token: only a *newer* openThread call should cancel this
+    // one. Comparing against selectedConversation here is wrong — background
+    // warming/reclassify can shift the selection mid-await and would falsely
+    // abort a legitimate open, flashing the reader back to the preview.
+    const seq = ++openSeq
+    // A new conversation invalidates any active find session.
+    if (command.value?.kind === 'find') command.value = null
+    threadFind.close()
+    findExpandedSnapshot = null
+    threadLoading.value = true
+    status.value = 'loading thread'
+    try {
+      const thread = await client.value.getThread(threadId)
+      if (seq !== openSeq) return // a newer open superseded this one
+      selectedThread.value = thread.conversation
+      threadMessages.value = thread.messages.map((message, index, messages) => ({ ...message, expanded: message.expanded || index === messages.length - 1 }))
+      focusedMessageId.value = threadMessages.value.at(-1)?.id ?? ''
+      composeOpen.value = false
+      replyOpen.value = false
+      replyExpanded.value = false
+      focusPane.value = 'thread'
+      status.value = 'thread loaded'
+      // getThread marks the thread read server-side; mirror that locally.
+      if (wasUnread) { patchListConversation(threadId, { unread: false }); bumpMailboxUnread(activeMailbox.value, -1) }
+      prepareReply('reply')
+    } finally {
+      if (seq === openSeq) threadLoading.value = false
+    }
   }
   function prepareReply(replyKind: ReplyMode) {
     replyMode.value = replyKind
-    const latest = threadMessages.value.at(-1)
-    const subject = selectedThread.value?.subject ?? ''
-    draft.value = newDraft({
-      threadId: selectedThread.value?.id,
-      to: replyKind === 'forward' ? [] : latest?.from ? [latest.from] : [],
-      subject: replyKind === 'forward' ? `Fwd: ${subject}` : subject.toLowerCase().startsWith('re:') ? subject : `Re: ${subject}`,
-      inReplyTo: latest?.rfcMessageId,
-      references: latest?.references ?? [],
-    })
+    draft.value = replyDraft(replyKind, selectedThread.value, threadMessages.value)
   }
   function openReply(replyKind: ReplyMode) {
     prepareReply(replyKind)
     replyOpen.value = true
+  }
+  function toggleReplyExpanded() {
+    replyExpanded.value = !replyExpanded.value
+  }
+  function toggleMessageExpanded(id: string) {
+    focusMessage(id)
+    const message = threadMessages.value.find((item) => item.id === id)
+    if (message) message.expanded = !message.expanded
+  }
+  function focusMessage(id: string) {
+    if (threadMessages.value.some((message) => message.id === id)) focusedMessageId.value = id
+  }
+  // Step message focus within the open thread (shift-J/K). Expands the newly
+  // focused message so its body is visible.
+  function focusAdjacentMessage(delta: number) {
+    const messages = threadMessages.value
+    if (!messages.length) return
+    const currentIndex = messages.findIndex((message) => message.id === focusedMessageId.value)
+    const nextIndex = Math.max(0, Math.min(messages.length - 1, (currentIndex < 0 ? 0 : currentIndex) + delta))
+    const next = messages[nextIndex]
+    if (!next) return
+    focusedMessageId.value = next.id
+    next.expanded = true
   }
   async function moveOut(id: string | undefined, op: (id: string) => Promise<void>, label: string) {
     if (!client.value || !id) return
@@ -308,8 +389,39 @@ function createMailShell() {
   async function archiveThread() {
     await moveOut(selectedThread.value?.id, (id) => client.value!.archiveThread(id), 'archived')
   }
-  async function snoozeThread() {
-    await moveOut(selectedThread.value?.id ?? selectedConversation.value?.id, (id) => client.value!.snoozeThread(id), 'snoozed')
+  async function snoozeThread(until?: string) {
+    await moveOut(selectedThread.value?.id ?? selectedConversation.value?.id, (id) => client.value!.snoozeThread(id, until), 'snoozed')
+  }
+  // Move the selected/open thread into a folder (mailbox).
+  async function moveThreadTo(mailboxId: string) {
+    const id = selectedThread.value?.id ?? selectedConversation.value?.id
+    if (!client.value?.moveThread) { status.value = 'move not supported'; return }
+    if (!id) { status.value = 'move: nothing selected'; return }
+    // Call moveThread as a method so `this` stays bound (the wails client reads
+    // this.account); extracting it into a variable detaches `this`.
+    await moveOut(id, (mid) => client.value!.moveThread!(mid, mailboxId), `moved → ${mailboxId}`)
+  }
+  // Apply a label without removing the thread from its mailbox.
+  async function applyLabel(labelId: string) {
+    const id = selectedThread.value?.id ?? selectedConversation.value?.id
+    if (!client.value?.applyLabel || !id) return
+    const row = conversations.value.find((c) => c.id === id) ?? searchResults.value.find((c) => c.id === id)
+    if (row && !row.labelIds.includes(labelId)) row.labelIds = [...row.labelIds, labelId]
+    status.value = 'labelled'
+    try { await client.value.applyLabel(id, labelId) } finally { await reloadList() }
+  }
+  async function createLabelAndApply(name: string) {
+    if (!client.value?.createLabel) { status.value = 'labels not supported'; return }
+    const label = await client.value.createLabel(name)
+    labels.value = await client.value.listLabels()
+    await applyLabel(label.id)
+  }
+  // Create a folder and move the selected thread into it in one step.
+  async function createFolderAndMove(name: string) {
+    if (!client.value?.createMailbox) { status.value = 'folders not supported'; return }
+    const created = await client.value.createMailbox(name.trim())
+    mailboxes.value = await client.value.listMailboxes()
+    await moveThreadTo(created.id)
   }
   async function toggleStar(conversation: Conversation | null = selectedThread.value ?? selectedConversation.value) {
     if (!client.value || !conversation) return
@@ -386,6 +498,7 @@ function createMailShell() {
     if (selectedThread.value?.id !== selectedConversation.value?.id) {
       selectedThread.value = null
       threadMessages.value = []
+      focusedMessageId.value = ''
       replyOpen.value = false
     }
   }
@@ -396,9 +509,13 @@ function createMailShell() {
   function closeThread() {
     selectedThread.value = null
     threadMessages.value = []
+    focusedMessageId.value = ''
     replyOpen.value = false
     replyExpanded.value = false
     focusPane.value = 'list'
+    if (command.value?.kind === 'find') command.value = null
+    threadFind.close()
+    findExpandedSnapshot = null
   }
   async function archiveSelected() {
     await moveOut(selectedThread.value?.id ?? selectedConversation.value?.id, (id) => client.value!.archiveThread(id), 'archived')
@@ -414,14 +531,39 @@ function createMailShell() {
       command.value = { kind, text: '' }
     }
   }
+  // `/` in the thread pane finds within the open conversation instead of
+  // running a mailbox-wide search.
+  function openFind() {
+    if (!selectedThread.value) return false
+    // Expand every message so find covers the whole conversation, not just the
+    // messages the user happened to have open. Snapshot first so closing find
+    // restores the prior collapsed/expanded layout. Newly-rendered iframes are
+    // picked up by the find engine as they load.
+    findExpandedSnapshot = new Map(threadMessages.value.map((m) => [m.id, m.expanded]))
+    for (const message of threadMessages.value) message.expanded = true
+    command.value = { kind: 'find', text: '' }
+    threadFind.open()
+    return true
+  }
+  function restoreFindExpansion() {
+    if (!findExpandedSnapshot) return
+    for (const message of threadMessages.value) {
+      const prev = findExpandedSnapshot.get(message.id)
+      if (prev !== undefined) message.expanded = prev
+    }
+    findExpandedSnapshot = null
+  }
   function submitCommand() {
     const current = command.value
+    // Find stays open on Enter — Enter just jumps to the next match.
+    if (current?.kind === 'find') { threadFind.next(); return }
     command.value = null
     if (current?.kind === 'ex') runEx(current.text)
     // search results persist; selection moves to the list.
   }
   function cancelCommand() {
     if (command.value?.kind === 'search') closeSearch()
+    if (command.value?.kind === 'find') { threadFind.close(); restoreFindExpansion() }
     command.value = null
   }
   function runEx(text: string) {
@@ -433,9 +575,11 @@ function createMailShell() {
     else if (cmd.startsWith('label ')) { query.value = `label:${cmd.slice(6).trim()}`; void openSearch() }
     else status.value = `E492: not an editor command: ${cmd}`
   }
-  function newDraft(overrides: Partial<ComposeDraft> = {}): ComposeDraft {
-    return { id: `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`, to: [], cc: [], bcc: [], subject: '', body: '', attachments: [], updatedAt: new Date().toISOString(), ...overrides }
+  function openCommandMenu() {
+    if (!selectedThread.value && !selectedConversation.value) return
+    commandMenuOpen.value = true
   }
+  function closeCommandMenu() { commandMenuOpen.value = false }
   function attachMock() {
     draft.value.attachments.push({ filename: `attachment-${draft.value.attachments.length + 1}.txt`, contentType: 'text/plain', content: 'Mock attachment' })
     status.value = 'attachment queued'
@@ -447,17 +591,19 @@ function createMailShell() {
   return {
     appPhase, client, account, configuredAccounts,
     activeMailbox, activeCategory, selectedIndex, selectedThread,
-    mailboxes, labels, conversations, searchResults, threadMessages,
-    query, replyMode, replyOpen, replyExpanded, focusPane, status, composeOpen, searchActive, command,
+    mailboxes, labels, conversations, searchResults, threadMessages, focusedMessageId,
+    query, replyMode, replyOpen, replyExpanded, focusPane, status, threadLoading, composeOpen, searchActive, command, commandMenuOpen,
     draft, recipientInput, setup, setupStatus, setupError, setupBusy,
     filteredConversations, activeList, selectedConversation, unreadCount,
-    todayConversations, earlierConversations, categoryCounts, mode, statusHints,
+    todayConversations, earlierConversations, categoryCounts, mode, statusHints, focusedThreadMessage,
     initializeApp, bootMailbox, submitOnboarding, resetSetup, removeAccount, refreshShell, openMailbox, warmMailbox,
-    selectCategory, createMailbox, renameMailbox, deleteMailbox,
-    openThread, prepareReply, archiveThread, snoozeThread, toggleStar, toggleRead,
+    selectCategory, selectConversation, createMailbox, renameMailbox, setMailboxIcon, deleteMailbox,
+    openThread, prepareReply, archiveThread, snoozeThread, moveThreadTo, applyLabel, createLabelAndApply, createFolderAndMove, toggleStar, toggleRead,
+    openCommandMenu, closeCommandMenu,
     compose, sendDraft, discardDraft, materializeRecipients, queueSave, runSearch, openSearch, closeSearch,
     moveSelection, selectFirst, selectLast, archiveSelected, focusList, focusThread, closeThread,
-    openCommand, submitCommand, cancelCommand, attachMock, openReply,
+    openCommand, openFind, submitCommand, cancelCommand, attachMock, openReply, toggleReplyExpanded, toggleMessageExpanded, focusMessage, focusAdjacentMessage,
+    threadFind,
   }
 }
 

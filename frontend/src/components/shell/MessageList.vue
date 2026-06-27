@@ -5,9 +5,9 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { categoryTabs, useMailShell } from '../../composables/useMailShell'
 import { useSettings } from '../../composables/useSettings'
-import { formatDate, labelFor } from '../../mail/format'
 import type { Conversation } from '../../mail/types'
-import { PhMagnifyingGlass, PhStar } from '@phosphor-icons/vue'
+import { PhMagnifyingGlass } from '@phosphor-icons/vue'
+import EmailRow from './EmailRow.vue'
 
 const s = useMailShell()
 const settings = useSettings()
@@ -31,7 +31,7 @@ function rowIndex(conversation: Conversation) {
   return indexById.value.get(conversation.id) ?? 0
 }
 function selectAndOpen(conversation: Conversation) {
-  s.selectedIndex.value = rowIndex(conversation)
+  s.selectConversation(conversation)
   void s.openThread(conversation.id)
   emit('open-thread')
 }
@@ -48,7 +48,7 @@ watch(
 </script>
 
 <template>
-  <section class="list-pane" :class="{ 'relno-on': settings.relativenumber, focused: s.focusPane.value === 'list' }" @pointerdown="s.focusList()">
+  <section class="list-pane" :class="{ 'relno-on': settings.relativenumber, focused: s.focusPane.value === 'list', 'thread-dimmed': s.focusPane.value === 'thread' }" @pointerdown="s.focusList()">
     <header class="list-header">
       <p v-if="s.searchActive.value"><strong>{{ s.searchResults.value.length }}</strong> results</p>
       <p v-else><strong>{{ s.filteredConversations.value.length }}</strong> · {{ s.unreadCount.value }} unread</p>
@@ -75,22 +75,16 @@ watch(
 
     <div ref="scrollRegion" class="scroll-region">
       <template v-if="s.searchActive.value">
-        <article
+        <EmailRow
           v-for="conversation in s.searchResults.value"
           :key="conversation.id"
-          class="email-row"
-          :class="{ unread: conversation.unread, selected: isCurrent(conversation) }"
+          :conversation="conversation"
+          :selected="isCurrent(conversation)"
+          :relative-number="settings.relativenumber ? rel(conversation) : undefined"
           :data-list-index="rowIndex(conversation)"
-          @click="selectAndOpen(conversation)"
-        >
-          <span v-if="settings.relativenumber" class="relno" :class="{ cur: isCurrent(conversation) }">{{ rel(conversation) }}</span>
-          <button class="star" :class="{ active: conversation.starred }" type="button" @click.stop="s.toggleStar(conversation)" aria-label="Star"><PhStar :size="15" :weight="conversation.starred ? 'fill' : 'regular'" /></button>
-          <div class="row-main">
-            <div class="row-top"><strong>{{ conversation.from.name || conversation.from.addr }}</strong><time>{{ formatDate(conversation.lastAt) }}</time></div>
-            <div class="subject"><span>{{ conversation.subject }}</span></div>
-            <div class="snippet-line">{{ conversation.snippet }}</div>
-          </div>
-        </article>
+          @open="selectAndOpen"
+          @toggle-star="s.toggleStar"
+        />
       </template>
 
       <template v-else>
@@ -98,22 +92,18 @@ watch(
         <template v-for="section in [{ label: 'Today', rows: s.todayConversations.value }, { label: 'Earlier', rows: s.earlierConversations.value }]" :key="section.label">
           <template v-if="section.rows.length">
             <p class="section-label">{{ section.label }}</p>
-            <article
+            <EmailRow
               v-for="conversation in section.rows"
               :key="conversation.id"
-              class="email-row"
-              :class="{ unread: conversation.unread, selected: isCurrent(conversation) }"
+              :conversation="conversation"
+              :labels="s.labels.value"
+              :selected="isCurrent(conversation)"
+              :relative-number="settings.relativenumber ? rel(conversation) : undefined"
+              show-label
               :data-list-index="rowIndex(conversation)"
-              @click="selectAndOpen(conversation)"
-            >
-              <span v-if="settings.relativenumber" class="relno" :class="{ cur: isCurrent(conversation) }">{{ rel(conversation) }}</span>
-              <button class="star" :class="{ active: conversation.starred }" type="button" @click.stop="s.toggleStar(conversation)" aria-label="Star"><PhStar :size="15" :weight="conversation.starred ? 'fill' : 'regular'" /></button>
-              <div class="row-main">
-                <div class="row-top"><strong>{{ conversation.from.name || conversation.from.addr }}</strong><time>{{ formatDate(conversation.lastAt) }}</time></div>
-                <div class="subject"><span>{{ conversation.subject }}</span><em v-if="labelFor(conversation, s.labels.value)" :style="{ background: labelFor(conversation, s.labels.value)?.bg, color: labelFor(conversation, s.labels.value)?.fg }">{{ labelFor(conversation, s.labels.value)?.name }}</em></div>
-                <div class="snippet-line">{{ conversation.snippet }}</div>
-              </div>
-            </article>
+              @open="selectAndOpen"
+              @toggle-star="s.toggleStar"
+            />
           </template>
         </template>
       </template>

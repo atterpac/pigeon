@@ -5,16 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/emersion/go-sasl"
 	"golang.org/x/oauth2"
 	gmailapi "google.golang.org/api/gmail/v1"
 
 	"github.com/atterpac/email/internal/auth"
+	"github.com/atterpac/email/internal/email"
 	"github.com/atterpac/email/internal/provider"
 	"github.com/atterpac/email/internal/provider/gmail"
 	"github.com/atterpac/email/internal/provider/imap"
-	"github.com/atterpac/email/pkg/email"
 )
 
 // App owns the email SDK client and the secrets it needs to build providers.
@@ -24,6 +26,26 @@ type App struct {
 
 	creds     auth.CredentialStore
 	googleCfg *oauth2.Config
+
+	// onNewMail, if set, is invoked by the background sync loop whenever a poll
+	// pulls in new mail. main wires it to the desktop notifications service.
+	onNewMail func(acct email.AccountID, mb provider.MailboxRef, msgs []email.Message)
+
+	mu sync.Mutex
+	// pollInterval is how often background syncs pull mail forward when no push
+	// hint arrives. Guarded by mu; mutated at runtime via SetPollInterval.
+	pollInterval time.Duration
+}
+
+// defaultPollInterval matches the sync engine's own default; kept here so the
+// frontend has a sensible value to show before the user changes anything.
+const defaultPollInterval = 60 * time.Second
+
+// SetNewMailHandler registers the callback the sync loops use to announce new
+// mail. Call it before StartConfiguredSyncs / onboarding so freshly started
+// loops pick it up.
+func (a *App) SetNewMailHandler(fn func(acct email.AccountID, mb provider.MailboxRef, msgs []email.Message)) {
+	a.onNewMail = fn
 }
 
 // newApp opens the store, wires the credential store (OS keyring), and builds
@@ -79,7 +101,7 @@ func newApp(ctx context.Context, dbPath, googleClientJSON string) (*App, error) 
 	if err != nil {
 		return nil, err
 	}
-	return &App{Client: client, creds: creds, googleCfg: googleCfg}, nil
+	return &App{Client: client, creds: creds, googleCfg: googleCfg, pollInterval: defaultPollInterval}, nil
 }
 
 // imapEndpoint holds the IMAP + SMTP connection details for a provider.
@@ -143,18 +165,61 @@ func (a *App) StartConfiguredSyncs(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("%s mailboxes: %w", acct.Email, err))
 			continue
 		}
-		if err := a.Client.StartSync(ctx, acct, []email.LabelID{syncMailbox(mailboxes)}, desktopSyncOptions()); err != nil {
+		if err := a.Client.StartSync(ctx, acct, []email.LabelID{syncMailbox(mailboxes)}, a.desktopSyncOptions()); err != nil {
 			errs = append(errs, fmt.Errorf("%s sync: %w", acct.Email, err))
 		}
 	}
 	return errors.Join(errs...)
 }
 
-func desktopSyncOptions() email.SyncOptions {
+func (a *App) desktopSyncOptions() email.SyncOptions {
+	a.mu.Lock()
+	interval := a.pollInterval
+	a.mu.Unlock()
 	return email.SyncOptions{
+		PollInterval:     interval,
 		BackfillPageSize: 100,
 		BackfillMaxPages: 5,
+		BodyWarmPages:    3, // warm ~75 newest inbox bodies before backfill
+		OnNewMail:        a.onNewMail,
 	}
+}
+
+// minPollInterval guards against hammering providers with sub-5s polls.
+const minPollInterval = 5 * time.Second
+
+// PollIntervalSeconds reports the current background poll interval, in seconds.
+// Exposed to the frontend so the settings UI can show the active value.
+func (a *App) PollIntervalSeconds() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return int(a.pollInterval / time.Second)
+}
+
+// SetPollInterval updates the background poll interval and restarts the running
+// sync loops so the change takes effect immediately. Values below
+// minPollInterval are clamped. Exposed to the frontend.
+func (a *App) SetPollInterval(ctx context.Context, seconds int) error {
+	interval := max(time.Duration(seconds)*time.Second, minPollInterval)
+	a.mu.Lock()
+	a.pollInterval = interval
+	a.mu.Unlock()
+	// StartSync replaces any existing loop for an account, so this re-arms every
+	// configured account with the new interval.
+	return a.StartConfiguredSyncs(ctx)
+}
+
+// SyncSettings is the thin Wails service that exposes runtime sync controls to
+// the frontend, keeping App's other methods off the binding surface.
+type SyncSettings struct{ app *App }
+
+// PollIntervalSeconds reports the current background poll interval, in seconds.
+func (s *SyncSettings) PollIntervalSeconds() int { return s.app.PollIntervalSeconds() }
+
+// SetPollInterval changes the background poll interval (seconds) and restarts
+// the sync loops. Values below the minimum are clamped server-side.
+func (s *SyncSettings) SetPollInterval(ctx context.Context, seconds int) error {
+	return s.app.SetPollInterval(ctx, seconds)
 }
 
 func syncMailbox(mailboxes []email.Mailbox) email.LabelID {

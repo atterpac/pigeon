@@ -12,7 +12,10 @@ const s = useMailShell()
   <main class="setup-shell">
     <section class="setup-panel">
       <div class="setup-copy">
-        <span class="setup-mark">mail</span>
+        <span class="setup-brand">
+          <img class="setup-beak" src="/chirp-core.svg" alt="" aria-hidden="true" />
+          <span class="setup-wordmark">chirp</span>
+        </span>
         <h1>Set up your account</h1>
         <p>Connect an inbox to start syncing mail locally.</p>
         <dl>

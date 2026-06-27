@@ -1,7 +1,6 @@
 <script setup lang="ts">
 // Self-contained markdown editor: textarea + line gutter + terminal caret +
-// INSERT/NORMAL vim modes + format helpers + preview. Moved verbatim (as a
-// unit) out of App.vue — the caret math is fiddly, so it was not rewritten.
+// INSERT/NORMAL vim modes + format helpers + preview.
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { renderMarkdown } from '../../mail/format'
 import { PhPaperPlaneTilt, PhTextB, PhTextItalic, PhCode, PhLink, PhPaperclip } from '@phosphor-icons/vue'

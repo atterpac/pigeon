@@ -2,23 +2,41 @@
 // The `/` search and `:` ex-command input strip, shown above the modeline while
 // a command is active. Search v-models the shell query (live results); ex
 // v-models the command text and dispatches on submit.
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useMailShell } from '../../composables/useMailShell'
 
 const s = useMailShell()
+const find = s.threadFind
 const inputRef = ref<HTMLInputElement | null>(null)
 
 const sigil = () => (s.command.value?.kind === 'ex' ? ':' : '/')
+
+const findCount = computed(() => {
+  if (!find.query.value.trim()) return ''
+  return find.total.value === 0 ? 'no matches' : `${find.current.value}/${find.total.value}`
+})
 
 watch(s.command, (cmd) => {
   if (cmd) nextTick(() => { inputRef.value?.focus(); inputRef.value?.select() })
 }, { immediate: true })
 
+// Live-highlight as the find query changes.
+watch(() => s.command.value?.kind === 'find' ? s.command.value.text : null, (text) => {
+  if (text != null) find.run(text)
+})
+
 function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Enter') { event.preventDefault(); s.submitCommand() }
+  const kind = s.command.value?.kind
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    if (kind === 'find' && event.shiftKey) find.prev()
+    else s.submitCommand()
+  }
   else if (event.key === 'Escape') { event.preventDefault(); s.cancelCommand() }
-  else if ((event.key === 'ArrowDown' || (event.ctrlKey && event.key === 'n')) && s.command.value?.kind === 'search') { event.preventDefault(); s.moveSelection(1) }
-  else if ((event.key === 'ArrowUp' || (event.ctrlKey && event.key === 'p')) && s.command.value?.kind === 'search') { event.preventDefault(); s.moveSelection(-1) }
+  else if ((event.key === 'ArrowDown' || (event.ctrlKey && event.key === 'n')) && kind === 'search') { event.preventDefault(); s.moveSelection(1) }
+  else if ((event.key === 'ArrowUp' || (event.ctrlKey && event.key === 'p')) && kind === 'search') { event.preventDefault(); s.moveSelection(-1) }
+  else if ((event.key === 'ArrowDown' || (event.ctrlKey && event.key === 'n')) && kind === 'find') { event.preventDefault(); find.next() }
+  else if ((event.key === 'ArrowUp' || (event.ctrlKey && event.key === 'p')) && kind === 'find') { event.preventDefault(); find.prev() }
 }
 </script>
 
@@ -35,6 +53,15 @@ function onKeydown(event: KeyboardEvent) {
       @keydown="onKeydown"
     />
     <input
+      v-else-if="s.command.value.kind === 'find'"
+      ref="inputRef"
+      v-model="s.command.value.text"
+      class="cmd-input"
+      placeholder="find in conversation"
+      spellcheck="false"
+      @keydown="onKeydown"
+    />
+    <input
       v-else
       ref="inputRef"
       v-model="s.command.value.text"
@@ -43,6 +70,7 @@ function onKeydown(event: KeyboardEvent) {
       spellcheck="false"
       @keydown="onKeydown"
     />
-    <span class="cmd-hint">{{ s.command.value.kind === 'search' ? '↵ keep · esc cancel' : '↵ run · esc cancel' }}</span>
+    <span v-if="s.command.value.kind === 'find' && findCount" class="cmd-count">{{ findCount }}</span>
+    <span class="cmd-hint">{{ s.command.value.kind === 'search' ? '↵ keep · esc cancel' : s.command.value.kind === 'find' ? '↵ next · ⇧↵ prev · esc close' : '↵ run · esc cancel' }}</span>
   </div>
 </template>

@@ -1,6 +1,5 @@
 // Reactive, localStorage-persisted user settings (singleton). Drives live theme
-// application and exposes the R2 view presets. The locked defaults match the
-// shipped UI; other preset values persist as switch points for incremental ports.
+// application and view presets.
 import { reactive, watch } from 'vue'
 import { applyTheme, getTheme } from '../theme/themes'
 
@@ -13,7 +12,10 @@ export interface Settings {
   density: 'comfortable' | 'compact'
   vimMode: boolean
   relativenumber: boolean
+  navCollapsed: boolean
   hiddenMailboxIds: string[]
+  // How often the backend polls for new mail, in seconds.
+  pollIntervalSeconds: number
 }
 
 const STORAGE_KEY = 'mail.settings'
@@ -26,7 +28,9 @@ const defaults: Settings = {
   density: 'compact',
   vimMode: true,
   relativenumber: true,
+  navCollapsed: false,
   hiddenMailboxIds: [],
+  pollIntervalSeconds: 60,
 }
 
 function load(): Partial<Settings> {

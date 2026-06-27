@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Settings modal whose own shape is a live R2 preset (settings.settingsLayout):
+// Settings modal whose own shape is a live preset (settings.settingsLayout):
 //   sidebar  — left nav + body (default)
 //   tabs     — horizontal tab bar on top
 //   fullscreen — same as sidebar but fills the viewport

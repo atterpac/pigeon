@@ -56,8 +56,106 @@ export function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error || 'Unknown error')
 }
 
+// Remove the email's own scripts/handlers before display: marketing JS is a
+// source of variable render cost (and an XSS surface). Our injected link
+// handler below still runs under sandbox="allow-scripts".
+function stripActiveContent(html: string) {
+  return html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
+    .replace(/javascript:/gi, '')
+}
+
 export function renderEmailHtml(html: string) {
-  return `<!doctype html><html><head><base target="_blank"><meta name="referrer" content="no-referrer"><style>html,body{margin:0;padding:0;background:#fff;color:#111}body{overflow-wrap:anywhere}img{max-width:100%;height:auto}</style></head><body>${html}</body></html>`
+  return `<!doctype html><html><head><base target="_blank"><meta name="referrer" content="no-referrer"><style>html,body{margin:0;padding:0;background:#fff;color:#111}body{overflow-wrap:anywhere;overflow:hidden}img{max-width:100%;height:auto}</style></head><body>${stripActiveContent(html)}<script>
+document.addEventListener('click', function(event) {
+  var link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
+  if (!link) return;
+  event.preventDefault();
+  event.stopPropagation();
+  window.parent.postMessage({ type: 'email-link-open', href: link.href }, '*');
+}, true);
+// Report content height so the parent can auto-size the iframe (no inner scroll).
+function reportHeight() {
+  var h = Math.max(
+    document.body.scrollHeight, document.documentElement.scrollHeight,
+    document.body.offsetHeight, document.documentElement.offsetHeight
+  );
+  window.parent.postMessage({ type: 'email-frame-height', height: h }, '*');
+}
+window.addEventListener('load', reportHeight);
+window.addEventListener('resize', reportHeight);
+if (window.ResizeObserver) { new ResizeObserver(reportHeight).observe(document.body); }
+Array.prototype.forEach.call(document.images, function(img) {
+  if (!img.complete) img.addEventListener('load', reportHeight);
+});
+reportHeight();
+// In-thread find: the parent can't read this sandboxed document, so it asks us
+// to highlight matches and reports back counts + match positions.
+(function() {
+  var marks = [];
+  function clearMarks() {
+    marks.forEach(function(m) {
+      if (!m.parentNode) return;
+      m.parentNode.replaceChild(document.createTextNode(m.textContent), m);
+    });
+    marks = [];
+    if (document.body) document.body.normalize();
+  }
+  function ensureStyle() {
+    if (document.getElementById('ef-find-style')) return;
+    var st = document.createElement('style');
+    st.id = 'ef-find-style';
+    st.textContent = 'mark.ef-find{background:#fde68a;color:#111;border-radius:2px}mark.ef-find.ef-active{background:#f59e0b;box-shadow:0 0 0 2px #f59e0b}';
+    (document.head || document.documentElement).appendChild(st);
+  }
+  function highlight(query) {
+    clearMarks();
+    var q = query.toLowerCase();
+    if (!q) return;
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: function(node) {
+        if (!node.nodeValue || node.nodeValue.toLowerCase().indexOf(q) === -1) return NodeFilter.FILTER_SKIP;
+        var tag = node.parentNode && node.parentNode.nodeName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'MARK') return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    var targets = [], n;
+    while ((n = walker.nextNode())) targets.push(n);
+    targets.forEach(function(node) {
+      var text = node.nodeValue, lower = text.toLowerCase();
+      var frag = document.createDocumentFragment(), last = 0, pos;
+      while ((pos = lower.indexOf(q, last)) !== -1) {
+        if (pos > last) frag.appendChild(document.createTextNode(text.slice(last, pos)));
+        var mark = document.createElement('mark');
+        mark.className = 'ef-find';
+        mark.textContent = text.slice(pos, pos + q.length);
+        frag.appendChild(mark);
+        marks.push(mark);
+        last = pos + q.length;
+      }
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      if (node.parentNode) node.parentNode.replaceChild(frag, node);
+    });
+  }
+  window.addEventListener('message', function(ev) {
+    var d = ev.data || {};
+    if (d.type === 'email-find') {
+      ensureStyle();
+      highlight(String(d.query || ''));
+      var tops = marks.map(function(m) { return m.getBoundingClientRect().top + (window.scrollY || 0); });
+      window.parent.postMessage({ type: 'email-find-result', count: marks.length, tops: tops }, '*');
+    } else if (d.type === 'email-find-activate') {
+      marks.forEach(function(m) { m.classList.remove('ef-active'); });
+      if (d.index != null && d.index >= 0 && marks[d.index]) marks[d.index].classList.add('ef-active');
+    } else if (d.type === 'email-find-clear') {
+      clearMarks();
+    }
+  });
+})();
+</script></body></html>`
 }
 
 export function renderInlineMarkdown(line: string) {
