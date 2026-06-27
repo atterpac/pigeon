@@ -24,6 +24,7 @@ type Querier interface {
 	EnqueueOp(ctx context.Context, arg EnqueueOpParams) error
 	GetAccount(ctx context.Context, id string) (Account, error)
 	GetBackfill(ctx context.Context, arg GetBackfillParams) ([]byte, error)
+	GetBackfillState(ctx context.Context, arg GetBackfillStateParams) (GetBackfillStateRow, error)
 	GetCursor(ctx context.Context, arg GetCursorParams) ([]byte, error)
 	GetDraft(ctx context.Context, arg GetDraftParams) (Draft, error)
 	GetFlags(ctx context.Context, arg GetFlagsParams) (string, error)
@@ -32,12 +33,15 @@ type Querier interface {
 	ListAccounts(ctx context.Context) ([]Account, error)
 	ListDrafts(ctx context.Context, account string) ([]Draft, error)
 	ListMailboxMessages(ctx context.Context, arg ListMailboxMessagesParams) ([]Message, error)
+	// UpsertMailbox (above) deliberately omits the icon columns from its ON CONFLICT
+	// update, so a user's chosen icon survives periodic topology sync.
 	ListMailboxes(ctx context.Context, account string) ([]Mailbox, error)
 	ListMessageLabels(ctx context.Context, arg ListMessageLabelsParams) ([]string, error)
 	ListParts(ctx context.Context, arg ListPartsParams) ([]Part, error)
 	ListSnoozes(ctx context.Context, account string) ([]ListSnoozesRow, error)
 	ListThreadMessages(ctx context.Context, arg ListThreadMessagesParams) ([]Message, error)
 	ListThreads(ctx context.Context, arg ListThreadsParams) ([]Thread, error)
+	MarkBackfillDone(ctx context.Context, arg MarkBackfillDoneParams) error
 	ReadyOps(ctx context.Context, arg ReadyOpsParams) ([]OpLog, error)
 	RecordDone(ctx context.Context, arg RecordDoneParams) error
 	RemoveLabel(ctx context.Context, arg RemoveLabelParams) error
@@ -45,6 +49,7 @@ type Querier interface {
 	SetBodyLoaded(ctx context.Context, arg SetBodyLoadedParams) error
 	SetCursor(ctx context.Context, arg SetCursorParams) error
 	SetFlags(ctx context.Context, arg SetFlagsParams) error
+	SetMailboxIcon(ctx context.Context, arg SetMailboxIconParams) error
 	UpsertAccount(ctx context.Context, arg UpsertAccountParams) error
 	UpsertDraft(ctx context.Context, arg UpsertDraftParams) error
 	UpsertMailbox(ctx context.Context, arg UpsertMailboxParams) error

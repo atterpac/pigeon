@@ -42,6 +42,7 @@ func (s *Store) Mailboxes(ctx context.Context, account model.AccountID) ([]model
 		out[i] = model.Mailbox{
 			ID: model.LabelID(r.ID), Account: model.AccountID(r.Account), Name: r.Name,
 			Path: r.Path, Role: model.Role(r.Role), Unread: int(r.Unread), Total: int(r.Total),
+			Icon: r.Icon, IconWeight: r.IconWeight, IconColor: r.IconColor,
 		}
 	}
 	return out, nil

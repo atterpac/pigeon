@@ -29,13 +29,16 @@ type Draft struct {
 }
 
 type Mailbox struct {
-	ID      string `json:"id"`
-	Account string `json:"account"`
-	Name    string `json:"name"`
-	Path    string `json:"path"`
-	Role    int64  `json:"role"`
-	Unread  int64  `json:"unread"`
-	Total   int64  `json:"total"`
+	ID         string `json:"id"`
+	Account    string `json:"account"`
+	Name       string `json:"name"`
+	Path       string `json:"path"`
+	Role       int64  `json:"role"`
+	Unread     int64  `json:"unread"`
+	Total      int64  `json:"total"`
+	Icon       string `json:"icon"`
+	IconWeight string `json:"icon_weight"`
+	IconColor  string `json:"icon_color"`
 }
 
 type Message struct {
@@ -100,10 +103,11 @@ type Snooze struct {
 }
 
 type SyncState struct {
-	Account  string `json:"account"`
-	Mailbox  string `json:"mailbox"`
-	Cursor   []byte `json:"cursor"`
-	Backfill []byte `json:"backfill"`
+	Account      string `json:"account"`
+	Mailbox      string `json:"mailbox"`
+	Cursor       []byte `json:"cursor"`
+	Backfill     []byte `json:"backfill"`
+	BackfillDone int64  `json:"backfill_done"`
 }
 
 type Thread struct {

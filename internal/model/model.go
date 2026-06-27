@@ -49,6 +49,12 @@ type Mailbox struct {
 	Role    Role   // semantic role if known (Inbox, Sent, ...)
 	Unread  int
 	Total   int
+	// User-assigned folder icon (local presentation metadata; not from the
+	// provider). Icon is a registry id, Weight a Phosphor weight, Color a theme
+	// token. Empty means "use the default icon for this folder".
+	Icon       string
+	IconWeight string
+	IconColor  string
 }
 
 // Role tags well-known mailboxes so the UI can find them across providers.

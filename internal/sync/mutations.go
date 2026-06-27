@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"time"
 
 	"github.com/atterpac/email/internal/model"
@@ -91,16 +92,23 @@ func (e *Engine) enqueueMutate(ctx context.Context, acct model.AccountID, pl mut
 
 // applyMutate dispatches a queued mutation to the provider.
 func (e *Engine) applyMutate(ctx context.Context, p provider.Provider, pl mutatePayload) error {
+	slog.Debug("applyMutate", "kind", pl.Kind, "ids", len(pl.IDs), "dst", pl.Dst,
+		"addLabels", pl.AddLabels, "removeLabels", pl.RemoveLabels)
+	var err error
 	switch pl.Kind {
 	case mutFlags:
-		return p.ApplyFlags(ctx, pl.IDs, pl.AddFlags, pl.RemoveFlags)
+		err = p.ApplyFlags(ctx, pl.IDs, pl.AddFlags, pl.RemoveFlags)
 	case mutLabels:
-		return p.ApplyLabels(ctx, pl.IDs, pl.AddLabels, pl.RemoveLabels)
+		err = p.ApplyLabels(ctx, pl.IDs, pl.AddLabels, pl.RemoveLabels)
 	case mutMove:
-		return p.Move(ctx, pl.IDs, provider.MailboxRef{ID: pl.Dst, Path: string(pl.Dst)})
+		err = p.Move(ctx, pl.IDs, provider.MailboxRef{ID: pl.Dst, Path: string(pl.Dst)})
 	case mutDelete:
-		return p.Delete(ctx, pl.IDs)
+		err = p.Delete(ctx, pl.IDs)
 	default:
 		return nil // unknown kind: drop
 	}
+	if err != nil {
+		slog.Error("applyMutate: provider mutation failed", "kind", pl.Kind, "dst", pl.Dst, "err", err)
+	}
+	return err
 }

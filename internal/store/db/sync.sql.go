@@ -86,6 +86,27 @@ func (q *Queries) GetBackfill(ctx context.Context, arg GetBackfillParams) ([]byt
 	return backfill, err
 }
 
+const getBackfillState = `-- name: GetBackfillState :one
+SELECT backfill, backfill_done FROM sync_state WHERE account = ? AND mailbox = ?
+`
+
+type GetBackfillStateParams struct {
+	Account string `json:"account"`
+	Mailbox string `json:"mailbox"`
+}
+
+type GetBackfillStateRow struct {
+	Backfill     []byte `json:"backfill"`
+	BackfillDone int64  `json:"backfill_done"`
+}
+
+func (q *Queries) GetBackfillState(ctx context.Context, arg GetBackfillStateParams) (GetBackfillStateRow, error) {
+	row := q.db.QueryRowContext(ctx, getBackfillState, arg.Account, arg.Mailbox)
+	var i GetBackfillStateRow
+	err := row.Scan(&i.Backfill, &i.BackfillDone)
+	return i, err
+}
+
 const getCursor = `-- name: GetCursor :one
 SELECT cursor FROM sync_state WHERE account = ? AND mailbox = ?
 `
@@ -100,6 +121,22 @@ func (q *Queries) GetCursor(ctx context.Context, arg GetCursorParams) ([]byte, e
 	var cursor []byte
 	err := row.Scan(&cursor)
 	return cursor, err
+}
+
+const markBackfillDone = `-- name: MarkBackfillDone :exec
+INSERT INTO sync_state (account, mailbox, backfill, backfill_done)
+VALUES (?, ?, NULL, 1)
+ON CONFLICT(account, mailbox) DO UPDATE SET backfill = NULL, backfill_done = 1
+`
+
+type MarkBackfillDoneParams struct {
+	Account string `json:"account"`
+	Mailbox string `json:"mailbox"`
+}
+
+func (q *Queries) MarkBackfillDone(ctx context.Context, arg MarkBackfillDoneParams) error {
+	_, err := q.db.ExecContext(ctx, markBackfillDone, arg.Account, arg.Mailbox)
+	return err
 }
 
 const readyOps = `-- name: ReadyOps :many

@@ -24,10 +24,13 @@ func (q *Queries) DeleteMailbox(ctx context.Context, arg DeleteMailboxParams) er
 }
 
 const listMailboxes = `-- name: ListMailboxes :many
-SELECT id, account, name, path, role, unread, total
+
+SELECT id, account, name, path, role, unread, total, icon, icon_weight, icon_color
 FROM mailboxes WHERE account = ? ORDER BY role, name
 `
 
+// UpsertMailbox (above) deliberately omits the icon columns from its ON CONFLICT
+// update, so a user's chosen icon survives periodic topology sync.
 func (q *Queries) ListMailboxes(ctx context.Context, account string) ([]Mailbox, error) {
 	rows, err := q.db.QueryContext(ctx, listMailboxes, account)
 	if err != nil {
@@ -45,6 +48,9 @@ func (q *Queries) ListMailboxes(ctx context.Context, account string) ([]Mailbox,
 			&i.Role,
 			&i.Unread,
 			&i.Total,
+			&i.Icon,
+			&i.IconWeight,
+			&i.IconColor,
 		); err != nil {
 			return nil, err
 		}
@@ -57,6 +63,30 @@ func (q *Queries) ListMailboxes(ctx context.Context, account string) ([]Mailbox,
 		return nil, err
 	}
 	return items, nil
+}
+
+const setMailboxIcon = `-- name: SetMailboxIcon :exec
+UPDATE mailboxes SET icon = ?, icon_weight = ?, icon_color = ?
+WHERE account = ? AND id = ?
+`
+
+type SetMailboxIconParams struct {
+	Icon       string `json:"icon"`
+	IconWeight string `json:"icon_weight"`
+	IconColor  string `json:"icon_color"`
+	Account    string `json:"account"`
+	ID         string `json:"id"`
+}
+
+func (q *Queries) SetMailboxIcon(ctx context.Context, arg SetMailboxIconParams) error {
+	_, err := q.db.ExecContext(ctx, setMailboxIcon,
+		arg.Icon,
+		arg.IconWeight,
+		arg.IconColor,
+		arg.Account,
+		arg.ID,
+	)
+	return err
 }
 
 const upsertMailbox = `-- name: UpsertMailbox :exec

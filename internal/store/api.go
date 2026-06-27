@@ -72,6 +72,17 @@ func (s *Store) DeleteMailbox(ctx context.Context, account model.AccountID, id m
 	return s.q.DeleteMailbox(ctx, gen.DeleteMailboxParams{Account: string(account), ID: string(id)})
 }
 
+// SetMailboxIcon stores the user's chosen folder icon (presentation metadata).
+func (s *Store) SetMailboxIcon(ctx context.Context, account model.AccountID, id model.LabelID, icon, weight, color string) error {
+	return s.q.SetMailboxIcon(ctx, gen.SetMailboxIconParams{
+		Icon:       icon,
+		IconWeight: weight,
+		IconColor:  color,
+		Account:    string(account),
+		ID:         string(id),
+	})
+}
+
 // SaveMessages upserts a batch of message envelopes with their labels, thread
 // rows, and FTS index entries — all in a single transaction.
 func (s *Store) SaveMessages(ctx context.Context, msgs []model.Message) error {
@@ -315,6 +326,26 @@ func (s *Store) GetBackfill(ctx context.Context, account model.AccountID, mailbo
 
 func (s *Store) SetBackfill(ctx context.Context, account model.AccountID, mailbox model.LabelID, cur []byte) error {
 	return s.q.SetBackfill(ctx, gen.SetBackfillParams{Account: string(account), Mailbox: string(mailbox), Backfill: cur})
+}
+
+// GetBackfillState returns the saved paging cursor and whether backfill has
+// already completed for this mailbox. Completion is tracked separately from the
+// cursor so a finished backfill is not mistaken for "never started" (empty
+// cursor) and restarted from newest on the next launch.
+func (s *Store) GetBackfillState(ctx context.Context, account model.AccountID, mailbox model.LabelID) (cur []byte, done bool, err error) {
+	row, err := s.q.GetBackfillState(ctx, gen.GetBackfillStateParams{Account: string(account), Mailbox: string(mailbox)})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return row.Backfill, row.BackfillDone != 0, nil
+}
+
+// MarkBackfillDone records that a mailbox is fully backfilled.
+func (s *Store) MarkBackfillDone(ctx context.Context, account model.AccountID, mailbox model.LabelID) error {
+	return s.q.MarkBackfillDone(ctx, gen.MarkBackfillDoneParams{Account: string(account), Mailbox: string(mailbox)})
 }
 
 // --- conversions ---

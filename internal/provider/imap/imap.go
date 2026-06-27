@@ -208,7 +208,7 @@ func (p *Provider) Sync(ctx context.Context, mb provider.MailboxRef, cur *provid
 		// changes on existing mail are captured, not just new messages.
 		var set imap.UIDSet
 		set.AddRange(1, 0) // 1:*
-		msgs, err := p.fetchEnvelopes(c, set, prev.ModSeq)
+		msgs, err := p.fetchEnvelopes(ctx, c, mb.Path, set, prev.ModSeq)
 		if err != nil {
 			p.reset()
 			return provider.Changes{}, nil, err
@@ -223,7 +223,7 @@ func (p *Provider) Sync(ctx context.Context, mb provider.MailboxRef, cur *provid
 		// No CONDSTORE: fall back to new UIDs only.
 		var set imap.UIDSet
 		set.AddRange(prev.LastUID+1, 0)
-		msgs, err := p.fetchEnvelopes(c, set, 0)
+		msgs, err := p.fetchEnvelopes(ctx, c, mb.Path, set, 0)
 		if err != nil {
 			p.reset()
 			return provider.Changes{}, nil, err
@@ -274,7 +274,7 @@ func (p *Provider) Backfill(ctx context.Context, mb provider.MailboxRef, page *p
 
 	var set imap.UIDSet
 	set.AddRange(lo, hi)
-	msgs, err := p.fetchEnvelopes(c, set, 0)
+	msgs, err := p.fetchEnvelopes(ctx, c, mb.Path, set, 0)
 	if err != nil {
 		p.reset()
 		return provider.Changes{}, nil, false, err
@@ -295,12 +295,49 @@ func (p *Provider) Backfill(ctx context.Context, mb provider.MailboxRef, page *p
 // fetchEnvelopes fetches UID+flags+envelope+structure for set. When
 // changedSince > 0 it adds CONDSTORE CHANGEDSINCE, returning only messages whose
 // MODSEQ advanced past it.
-func (p *Provider) fetchEnvelopes(c *imapclient.Client, set imap.UIDSet, changedSince uint64) ([]*imapclient.FetchMessageBuffer, error) {
+//
+// Resilience: go-imap/v2 (beta.8) cannot parse some servers' BODYSTRUCTURE
+// responses — notably Gmail multiparts with a NIL subpart, which surface as
+// "imapwire: expected '(', got \"N\"". That parse error also desyncs the
+// connection. When it happens we reconnect, reselect, and re-fetch the same set
+// WITHOUT BODYSTRUCTURE so the server never emits the unparseable bytes. The
+// envelopes still sync (attachment flags are simply left unset, later derivable
+// from the body), which stops backfill from looping forever on a poison page.
+func (p *Provider) fetchEnvelopes(ctx context.Context, c *imapclient.Client, mbPath string, set imap.UIDSet, changedSince uint64) ([]*imapclient.FetchMessageBuffer, error) {
+	msgs, err := fetchEnvelopesOnce(c, set, changedSince, true)
+	if err == nil {
+		return msgs, nil
+	}
+	if !isBodyStructureParseError(err) {
+		return nil, err
+	}
+
+	p.reset()
+	c2, cerr := p.conn(ctx)
+	if cerr != nil {
+		p.reset()
+		return nil, cerr
+	}
+	if _, serr := c2.Select(mbPath, nil).Wait(); serr != nil {
+		p.reset()
+		return nil, fmt.Errorf("imap reselect %q: %w", mbPath, serr)
+	}
+	p.selected = mbPath
+	msgs, err = fetchEnvelopesOnce(c2, set, changedSince, false)
+	if err != nil {
+		return nil, err
+	}
+	return msgs, nil
+}
+
+func fetchEnvelopesOnce(c *imapclient.Client, set imap.UIDSet, changedSince uint64, withStructure bool) ([]*imapclient.FetchMessageBuffer, error) {
 	opts := &imap.FetchOptions{
-		UID:           true,
-		Flags:         true,
-		Envelope:      true,
-		BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
+		UID:      true,
+		Flags:    true,
+		Envelope: true,
+	}
+	if withStructure {
+		opts.BodyStructure = &imap.FetchItemBodyStructure{Extended: true}
 	}
 	if changedSince > 0 {
 		opts.ModSeq = true
@@ -311,6 +348,12 @@ func (p *Provider) fetchEnvelopes(c *imapclient.Client, set imap.UIDSet, changed
 		return nil, fmt.Errorf("imap fetch: %w", err)
 	}
 	return msgs, nil
+}
+
+// isBodyStructureParseError detects the go-imap BODYSTRUCTURE parse failure so we
+// can retry without it rather than treat the page as permanently broken.
+func isBodyStructureParseError(err error) bool {
+	return strings.Contains(err.Error(), "body-type-")
 }
 
 func (p *Provider) FetchBodies(ctx context.Context, ids []model.MessageID) ([]model.RawMessage, error) {

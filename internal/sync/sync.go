@@ -37,25 +37,25 @@ func (e *Engine) RegisterAccount(ctx context.Context, p provider.Provider, acct 
 }
 
 // SyncForward pulls mail newer than the stored cursor into the store and returns
-// the number of messages written.
-func (e *Engine) SyncForward(ctx context.Context, p provider.Provider, acct model.AccountID, mb provider.MailboxRef) (int, error) {
+// the messages written (new or changed envelopes).
+func (e *Engine) SyncForward(ctx context.Context, p provider.Provider, acct model.AccountID, mb provider.MailboxRef) ([]model.Message, error) {
 	curBytes, err := e.store.GetCursor(ctx, acct, mb.ID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	ch, next, err := p.Sync(ctx, mb, wrap(curBytes))
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	if err := e.applyChanges(ctx, acct, ch); err != nil {
-		return 0, err
+		return nil, err
 	}
 	if next != nil {
 		if err := e.store.SetCursor(ctx, acct, mb.ID, next.Bytes); err != nil {
-			return 0, err
+			return nil, err
 		}
 	}
-	return len(ch.Upserted), nil
+	return ch.Upserted, nil
 }
 
 // applyChanges persists a provider delta: upserts, flag/label changes, and
@@ -91,9 +91,14 @@ func (e *Engine) applyChanges(ctx context.Context, acct model.AccountID, ch prov
 // count written and whether backfill is complete for this mailbox. Call it in a
 // loop (or on demand, e.g. "load older") until done is true.
 func (e *Engine) BackfillPage(ctx context.Context, p provider.Provider, acct model.AccountID, mb provider.MailboxRef, limit int) (n int, done bool, err error) {
-	pageBytes, err := e.store.GetBackfill(ctx, acct, mb.ID)
+	pageBytes, alreadyDone, err := e.store.GetBackfillState(ctx, acct, mb.ID)
 	if err != nil {
 		return 0, false, err
+	}
+	// History is already fully indexed for this mailbox — nothing to fetch.
+	// This prevents re-paging the entire mailbox from newest on every launch.
+	if alreadyDone {
+		return 0, true, nil
 	}
 	ch, next, done, err := p.Backfill(ctx, mb, wrap(pageBytes), limit)
 	if err != nil {
@@ -102,14 +107,20 @@ func (e *Engine) BackfillPage(ctx context.Context, p provider.Provider, acct mod
 	if err := e.store.SaveMessages(ctx, ch.Upserted); err != nil {
 		return 0, false, err
 	}
-	// Persist paging position. When done, store an empty marker so we don't
-	// restart from newest on the next call.
-	var nextBytes []byte
-	if next != nil {
-		nextBytes = next.Bytes
-	}
-	if err := e.store.SetBackfill(ctx, acct, mb.ID, nextBytes); err != nil {
-		return 0, false, err
+	// Persist paging position, or record completion so the next launch skips
+	// this mailbox entirely instead of restarting from newest.
+	if done {
+		if err := e.store.MarkBackfillDone(ctx, acct, mb.ID); err != nil {
+			return 0, false, err
+		}
+	} else {
+		var nextBytes []byte
+		if next != nil {
+			nextBytes = next.Bytes
+		}
+		if err := e.store.SetBackfill(ctx, acct, mb.ID, nextBytes); err != nil {
+			return 0, false, err
+		}
 	}
 	return len(ch.Upserted), done, nil
 }

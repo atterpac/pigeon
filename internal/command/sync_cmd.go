@@ -95,11 +95,11 @@ func cmdSync(ctx context.Context, args []string) error {
 	}
 
 	// Pull anything newer than our forward cursor.
-	n, err := eng.SyncForward(ctx, p, acct.ID, ref)
+	msgs, err := eng.SyncForward(ctx, p, acct.ID, ref)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("forward sync: +%d new\n", n)
+	fmt.Printf("forward sync: +%d new\n", len(msgs))
 	return nil
 }
 

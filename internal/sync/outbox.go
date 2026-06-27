@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/atterpac/email/internal/model"
@@ -46,6 +47,9 @@ func (e *Engine) drainOutboxAt(ctx context.Context, p provider.Provider, acct mo
 	ops, err := e.store.ReadyOps(ctx, acct, now, 50)
 	if err != nil {
 		return 0, err
+	}
+	if len(ops) > 0 {
+		slog.Debug("outbox: draining", "account", acct, "ready", len(ops))
 	}
 	sent := 0
 	for _, op := range ops {

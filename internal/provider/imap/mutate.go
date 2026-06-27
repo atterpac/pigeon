@@ -3,34 +3,54 @@ package imap
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/emersion/go-imap/v2"
+	"github.com/emersion/go-imap/v2/imapclient"
 
 	"github.com/atterpac/email/internal/model"
 	"github.com/atterpac/email/internal/provider"
 )
 
-// uidSet builds a UID set from SDK message ids (imap:<account>:<uid>).
-func uidSet(ids []model.MessageID) imap.UIDSet {
+// resolveUIDSet maps store message ids to UIDs in the currently selected
+// mailbox. Store ids are canonically RFC Message-IDs (so the same mail across
+// folders dedups to one row), which carry no UID — so we resolve those via
+// UID SEARCH HEADER Message-ID. Ids still in "imap:<account>:<uid>" form are
+// parsed directly. Without this, mutations get RFC ids, resolve to zero UIDs,
+// and silently no-op.
+func (p *Provider) resolveUIDSet(c *imapclient.Client, ids []model.MessageID) (imap.UIDSet, error) {
 	var set imap.UIDSet
 	for _, id := range ids {
 		if uid, ok := uidFromMessageID(id); ok {
 			set.AddNum(uid)
+			continue
+		}
+		uids, err := p.searchMessageID(c, id)
+		if err != nil {
+			return nil, err
+		}
+		if len(uids) == 0 {
+			slog.Debug("imap: message-id not found in selected mailbox", "selected", p.selected, "id", id)
+		}
+		for _, uid := range uids {
+			set.AddNum(uid)
 		}
 	}
-	return set
+	return set, nil
 }
 
-// ensureSelected makes sure a mailbox is selected for UID-based mutations.
-// IMAP mutations act on the currently selected mailbox; the SDK message id does
-// not encode the mailbox, so callers must have synced/selected the relevant
-// mailbox first. Defaults to INBOX.
+// ensureSelected selects INBOX for UID-based mutations. IMAP mutations act on
+// the currently selected mailbox and the SDK message id does not encode its
+// source mailbox — and background folder pulls leave other mailboxes selected.
+// In this app the desktop acts on INBOX messages, so we explicitly (re)select
+// INBOX rather than trusting whatever was last selected (which would make a
+// COPY/MOVE/STORE silently target the wrong mailbox's UIDs).
 func (p *Provider) ensureSelected(ctx context.Context) error {
 	c, err := p.conn(ctx)
 	if err != nil {
 		return err
 	}
-	if p.selected != "" {
+	if p.selected == "INBOX" {
 		return nil
 	}
 	if _, err := c.Select("INBOX", nil).Wait(); err != nil {
@@ -49,7 +69,10 @@ func (p *Provider) ApplyFlags(ctx context.Context, ids []model.MessageID, add, r
 		return err
 	}
 	c, _ := p.conn(ctx)
-	set := uidSet(ids)
+	set, err := p.resolveUIDSet(c, ids)
+	if err != nil {
+		return err
+	}
 	if len(set) == 0 {
 		return nil
 	}
@@ -75,8 +98,14 @@ func (p *Provider) Move(ctx context.Context, ids []model.MessageID, dst provider
 		return err
 	}
 	c, _ := p.conn(ctx)
-	set := uidSet(ids)
+	set, err := p.resolveUIDSet(c, ids)
+	if err != nil {
+		return err
+	}
+	// IMAP UID operations act on the *currently selected* mailbox (INBOX here).
+	slog.Debug("imap.move", "selected", p.selected, "dst", dst.Path, "ids", len(ids), "uids", len(set))
 	if len(set) == 0 {
+		slog.Debug("imap.move: no message ids resolved to UIDs", "ids", ids)
 		return nil
 	}
 	if _, err := c.Move(set, dst.Path).Wait(); err != nil {
@@ -94,7 +123,10 @@ func (p *Provider) Delete(ctx context.Context, ids []model.MessageID) error {
 		return err
 	}
 	c, _ := p.conn(ctx)
-	set := uidSet(ids)
+	set, err := p.resolveUIDSet(c, ids)
+	if err != nil {
+		return err
+	}
 	if len(set) == 0 {
 		return nil
 	}
@@ -107,10 +139,50 @@ func (p *Provider) Delete(ctx context.Context, ids []model.MessageID) error {
 	return nil
 }
 
-// ApplyLabels is unsupported on generic IMAP (no label model); Gmail label
-// changes go through the Gmail REST provider.
-func (p *Provider) ApplyLabels(context.Context, []model.MessageID, []model.LabelID, []model.LabelID) error {
-	return fmt.Errorf("imap: labels unsupported (use the Gmail provider)")
+// ApplyLabels maps the app's label model onto IMAP folders: IMAP has no labels,
+// but in this app a "label" is just a mailbox, so adding label X means COPY the
+// message into folder X (the original stays in place). Removing INBOX (the
+// archive gesture) expunges from the source; other removals have no IMAP analog
+// and are ignored. COPY/STORE act on the currently selected mailbox, so the
+// caller must have the source mailbox selected (defaults to INBOX).
+func (p *Provider) ApplyLabels(ctx context.Context, ids []model.MessageID, add, remove []model.LabelID) error {
+	p.opMu.Lock()
+	defer p.opMu.Unlock()
+
+	if err := p.ensureSelected(ctx); err != nil {
+		return err
+	}
+	c, _ := p.conn(ctx)
+	set, err := p.resolveUIDSet(c, ids)
+	if err != nil {
+		return err
+	}
+	slog.Debug("imap.applyLabels", "selected", p.selected, "add", add, "remove", remove,
+		"ids", len(ids), "uids", len(set))
+	if len(set) == 0 {
+		return nil
+	}
+	for _, lbl := range add {
+		if string(lbl) == p.selected {
+			continue // already in this mailbox
+		}
+		if _, err := c.Copy(set, string(lbl)).Wait(); err != nil {
+			return fmt.Errorf("imap copy to %q: %w", lbl, err)
+		}
+	}
+	// Removing INBOX is the archive gesture: drop the source copy.
+	for _, lbl := range remove {
+		if string(lbl) != string(p.selected) {
+			continue
+		}
+		if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close(); err != nil {
+			return fmt.Errorf("imap store \\Deleted: %w", err)
+		}
+		if err := c.UIDExpunge(set).Close(); err != nil {
+			return fmt.Errorf("imap expunge: %w", err)
+		}
+	}
+	return nil
 }
 
 // CreateMailbox issues IMAP CREATE and returns the new mailbox.

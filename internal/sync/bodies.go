@@ -37,6 +37,27 @@ func (e *Engine) LoadBody(ctx context.Context, p provider.Provider, account mode
 	return parsed.Parts, nil
 }
 
+// WarmBodies fetches and caches bodies for the newest `limit` messages in a
+// mailbox, skipping any already loaded. It is used at launch to prioritize the
+// first screens the user will actually open, ahead of full history backfill.
+func (e *Engine) WarmBodies(ctx context.Context, p provider.Provider, account model.AccountID, mailbox model.LabelID, limit int) (int, error) {
+	if limit <= 0 {
+		return 0, nil
+	}
+	msgs, err := e.store.MailboxMessages(ctx, account, mailbox, limit)
+	if err != nil {
+		return 0, err
+	}
+	ids := make([]model.MessageID, 0, len(msgs))
+	for _, m := range msgs {
+		if m.BodyLoaded {
+			continue
+		}
+		ids = append(ids, m.ID)
+	}
+	return e.LoadBodies(ctx, p, account, ids)
+}
+
 // LoadBodies fetches and persists bodies for a batch of messages, skipping
 // messages already cached locally. It returns the number newly loaded. A
 // per-message parse/store failure does not stop the whole batch, but is joined
