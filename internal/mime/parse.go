@@ -54,6 +54,7 @@ func Parse(raw []byte) (Parsed, error) {
 		case *gomail.InlineHeader:
 			ct, params, _ := h.ContentType()
 			p.ContentType, p.Charset, p.Disposition = ct, params["charset"], "inline"
+			p.ContentID = bareID(h.Get("Content-Id"))
 			if ct == "text/plain" && out.Text == "" {
 				out.Text = string(body)
 			}
@@ -61,6 +62,7 @@ func Parse(raw []byte) (Parsed, error) {
 			ct, params, _ := h.ContentType()
 			p.ContentType, p.Charset, p.Disposition = ct, params["charset"], "attachment"
 			p.Filename, _ = h.Filename()
+			p.ContentID = bareID(h.Get("Content-Id"))
 		}
 		out.Parts = append(out.Parts, p)
 	}

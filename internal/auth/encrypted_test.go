@@ -12,7 +12,7 @@ func TestEncryptedRoundTrip(t *testing.T) {
 	pass := func() ([]byte, error) { return []byte("correct horse battery staple"), nil }
 
 	s := NewEncrypted(path, pass)
-	want := Credential{RefreshToken: "rt-123", AccessToken: "at-456", TokenType: "Bearer"}
+	want := Credential{Password: "app-pass-123"}
 	if err := s.Set(ctx, "a@x.io", want); err != nil {
 		t.Fatalf("set: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestEncryptedRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if got.RefreshToken != want.RefreshToken || got.AccessToken != want.AccessToken {
+	if got.Password != want.Password {
 		t.Fatalf("round-trip mismatch: %+v", got)
 	}
 

@@ -47,3 +47,43 @@ func TestBuildParses(t *testing.T) {
 		t.Fatalf("expected multipart/mixed, got %q", h.Get("Content-Type"))
 	}
 }
+
+// Inline images survive the build → parse round-trip: the part keeps its
+// Content-ID (bare) and an inline disposition so receiving clients render it in
+// place of the cid: reference.
+func TestBuildParsesInlineImage(t *testing.T) {
+	out := model.Outgoing{
+		From:    model.Address{Addr: "me@x.io"},
+		To:      []model.Address{{Addr: "a@y.io"}},
+		Subject: "with image",
+		Text:    "see image",
+		HTML:    `<p>hi <img src="cid:logo123"></p>`,
+		Attachments: []model.Outfile{
+			{Filename: "logo.png", ContentType: "image/png", Content: []byte("\x89PNG..."), ContentID: "logo123"},
+		},
+	}
+	raw, err := Build(out, time.Unix(1_700_000_000, 0), "<gen@x.io>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var found *model.Part
+	for i := range parsed.Parts {
+		if parsed.Parts[i].ContentID == "logo123" {
+			found = &parsed.Parts[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("inline part with ContentID not found in %d parts", len(parsed.Parts))
+	}
+	if found.Disposition != "inline" {
+		t.Fatalf("expected inline disposition, got %q", found.Disposition)
+	}
+	if found.ContentType != "image/png" {
+		t.Fatalf("expected image/png, got %q", found.ContentType)
+	}
+}

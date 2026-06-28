@@ -65,7 +65,15 @@ func (e *Engine) ApplyLabels(ctx context.Context, acct model.AccountID, ids []mo
 func (e *Engine) Move(ctx context.Context, acct model.AccountID, ids []model.MessageID, dst model.LabelID) error {
 	deltas := make([]store.FlagDelta, len(ids))
 	for i, id := range ids {
-		deltas[i] = store.FlagDelta{ID: id, AddLabels: []model.LabelID{dst}, RemoveLabels: []model.LabelID{"INBOX"}}
+		d := store.FlagDelta{ID: id, AddLabels: []model.LabelID{dst}}
+		// Moving *out* of the inbox drops the INBOX label. Moving *into* it must
+		// NOT also remove INBOX — adds run before removes in ApplyFlagDeltas, so
+		// add+remove of the same label cancels out and leaves the message in no
+		// mailbox (this is what broke undo-archive: the mail never reappeared).
+		if dst != "INBOX" {
+			d.RemoveLabels = []model.LabelID{"INBOX"}
+		}
+		deltas[i] = d
 	}
 	if err := e.store.ApplyFlagDeltas(ctx, acct, deltas); err != nil {
 		return err
@@ -87,7 +95,8 @@ func (e *Engine) enqueueMutate(ctx context.Context, acct model.AccountID, pl mut
 	if err != nil {
 		return err
 	}
-	return e.store.EnqueueOp(ctx, acct, OpMutate, b, time.Now())
+	_, err = e.store.EnqueueOp(ctx, acct, OpMutate, b, time.Now())
+	return err
 }
 
 // applyMutate dispatches a queued mutation to the provider.

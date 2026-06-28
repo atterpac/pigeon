@@ -1,6 +1,6 @@
 // Package imap implements provider.Provider over IMAP4rev2 (go-imap v2) for
 // fetch/sync (IDLE for push, UID-based incremental sync) and SMTP (go-smtp) for
-// send. XOAUTH2 SASL where supported, password otherwise.
+// send. Authentication is a plain password / app-password (PLAIN SASL).
 //
 // This file covers the read path: connect/auth, list mailboxes, backfill and
 // incremental envelope sync, and on-demand body fetch. Write operations and
@@ -23,18 +23,15 @@ import (
 	"github.com/atterpac/email/internal/provider"
 )
 
-// Config describes how to connect to an IMAP account. Provide exactly one auth
-// method: NewSASL (XOAUTH2) or Password (plain).
+// Config describes how to connect to an IMAP account. Authentication is a plain
+// password / app-password over an implicit-TLS connection.
 type Config struct {
 	Account  model.AccountID
 	Host     string // e.g. imap.gmail.com
 	Port     int    // e.g. 993
 	Username string
 
-	// NewSASL builds a fresh SASL client per login so the access token is
-	// current. Used for XOAUTH2. Mutually exclusive with Password.
-	NewSASL func() (sasl.Client, error)
-	// Password is the plain/app-password fallback.
+	// Password is the plain / app-password used for IMAP and SMTP login.
 	Password string
 
 	// SMTP delivery (Send). Defaults to the IMAP host on port 587 (STARTTLS).
@@ -107,16 +104,12 @@ func (p *Provider) conn(ctx context.Context) (*imapclient.Client, error) {
 	return c, nil
 }
 
-// saslClient builds the configured SASL client (XOAUTH2 or PLAIN).
+// saslClient builds the PLAIN SASL client from the configured password.
 func (p *Provider) saslClient() (sasl.Client, error) {
-	switch {
-	case p.cfg.NewSASL != nil:
-		return p.cfg.NewSASL()
-	case p.cfg.Password != "":
-		return sasl.NewPlainClient("", p.cfg.Username, p.cfg.Password), nil
-	default:
-		return nil, errors.New("imap: no auth method configured")
+	if p.cfg.Password == "" {
+		return nil, errors.New("imap: no password configured")
 	}
+	return sasl.NewPlainClient("", p.cfg.Username, p.cfg.Password), nil
 }
 
 // reset drops the connection so the next call reconnects (used on error).
@@ -356,22 +349,27 @@ func isBodyStructureParseError(err error) bool {
 	return strings.Contains(err.Error(), "body-type-")
 }
 
-func (p *Provider) FetchBodies(ctx context.Context, ids []model.MessageID) ([]model.RawMessage, error) {
+func (p *Provider) FetchBodies(ctx context.Context, mb provider.MailboxRef, ids []model.MessageID) ([]model.RawMessage, error) {
 	p.opMu.Lock()
 	defer p.opMu.Unlock()
 
-	// Bodies are fetched by UID within the currently selected mailbox. The
-	// engine passes provider message ids that encode the UID; see messageID().
+	// Bodies are fetched by UID/Message-ID within the selected mailbox, so we
+	// must select the folder the message actually lives in (not always INBOX) —
+	// otherwise non-inbox messages resolve to no UID and the body fetch is empty.
+	mbPath := mb.Path
+	if mbPath == "" {
+		mbPath = "INBOX"
+	}
 	c, err := p.conn(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if p.selected != "INBOX" {
-		if _, err := c.Select("INBOX", nil).Wait(); err != nil {
+	if p.selected != mbPath {
+		if _, err := c.Select(mbPath, nil).Wait(); err != nil {
 			p.reset()
-			return nil, fmt.Errorf("imap select %q: %w", "INBOX", err)
+			return nil, fmt.Errorf("imap select %q: %w", mbPath, err)
 		}
-		p.selected = "INBOX"
+		p.selected = mbPath
 	}
 	var set imap.UIDSet
 	idByUID := map[imap.UID]model.MessageID{}

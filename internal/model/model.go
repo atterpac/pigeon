@@ -17,12 +17,12 @@ type ThreadID string
 // LabelID identifies a Gmail label or, for IMAP, a folder mapped to a label.
 type LabelID string
 
-// Kind distinguishes the backend used by an account.
+// Kind distinguishes the backend used by an account. IMAP/SMTP is the only
+// backend; the type is retained for the stored account schema and future use.
 type Kind int
 
 const (
 	KindIMAP Kind = iota
-	KindGmail
 )
 
 // Account is a configured mailbox login.
@@ -76,6 +76,16 @@ type Address struct {
 	Addr string
 }
 
+// Contact is an address-book entry harvested from message envelopes: an address
+// plus the most-recent display name seen for it, with frequency/recency used to
+// rank recipient autocomplete.
+type Contact struct {
+	Name     string
+	Addr     string
+	LastSeen time.Time
+	Freq     int
+}
+
 // Flag is a per-message state bit (seen, flagged, answered, draft, ...).
 type Flag string
 
@@ -119,8 +129,10 @@ type Message struct {
 	RFCMessageID string
 	References   []string
 	// BodyLoaded reports whether Parts are populated in the store.
-	BodyLoaded bool
-	Parts      []Part
+	BodyLoaded   bool
+	BodyCachedAt time.Time
+	LastOpenedAt time.Time
+	Parts        []Part
 }
 
 // Part is a single MIME part of a message body.
@@ -129,7 +141,10 @@ type Part struct {
 	Charset     string
 	Disposition string // inline | attachment
 	Filename    string
-	Size        int64
+	// ContentID is the bare Content-ID (no angle brackets) for inline parts
+	// referenced from HTML via cid: URLs; empty for ordinary parts.
+	ContentID string
+	Size      int64
 	// Content is populated only when loaded; large attachments are spooled to
 	// the blob store and referenced by BlobRef instead.
 	Content []byte
@@ -206,6 +221,9 @@ type Outfile struct {
 	Filename    string
 	ContentType string
 	Content     []byte
+	// ContentID, when set, marks this as an inline part (Content-Disposition:
+	// inline) embeddable from the HTML body via cid:<ContentID>.
+	ContentID string
 }
 
 // Thread is a conversation grouping.

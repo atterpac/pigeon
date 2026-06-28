@@ -126,6 +126,9 @@ func (s *Store) SaveMessages(ctx context.Context, msgs []model.Message) error {
 		if err := indexFTS(ctx, tx, m); err != nil {
 			return err
 		}
+		if err := harvestContacts(ctx, q, m.Account, m); err != nil {
+			return err
+		}
 	}
 	for thread := range touchedThreads {
 		if err := recalcThreadUnread(ctx, tx, msgs[0].Account, thread); err != nil {

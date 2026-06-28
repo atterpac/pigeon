@@ -53,7 +53,11 @@ func Build(m model.Outgoing, now time.Time, messageID string) ([]byte, error) {
 		return nil, err
 	}
 	for _, att := range m.Attachments {
-		if err := writeAttachment(w, att); err != nil {
+		write := writeAttachment
+		if att.ContentID != "" {
+			write = writeInlineImage // referenced from the HTML body via cid:
+		}
+		if err := write(w, att); err != nil {
 			return nil, err
 		}
 	}
@@ -108,6 +112,33 @@ func writeAttachment(w *gomail.Writer, att model.Outfile) error {
 	ah.SetContentType(ct, nil)
 	ah.SetFilename(att.Filename)
 	pw, err := w.CreateAttachment(ah)
+	if err != nil {
+		return err
+	}
+	if _, err := pw.Write(att.Content); err != nil {
+		return err
+	}
+	return pw.Close()
+}
+
+// writeInlineImage writes an inline part carrying a Content-ID so the HTML body
+// can reference it via cid:. It uses the inline-part path (Content-Disposition:
+// inline, base64) so receiving clients render it in place rather than listing it
+// as a downloadable attachment. CreateAttachment can't be used here — it forces
+// Content-Disposition: attachment.
+func writeInlineImage(w *gomail.Writer, att model.Outfile) error {
+	var ih gomail.InlineHeader
+	ct := att.ContentType
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	if att.Filename != "" {
+		ih.SetContentType(ct, map[string]string{"name": att.Filename})
+	} else {
+		ih.SetContentType(ct, nil)
+	}
+	ih.Set("Content-Id", "<"+bareID(att.ContentID)+">")
+	pw, err := w.CreateSingleInline(ih)
 	if err != nil {
 		return err
 	}

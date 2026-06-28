@@ -19,7 +19,7 @@ func (e *Engine) LoadBody(ctx context.Context, p provider.Provider, account mode
 	if loaded, err := e.store.IsBodyLoaded(ctx, account, id); err == nil && loaded {
 		return e.store.Parts(ctx, account, id)
 	}
-	raws, err := p.FetchBodies(ctx, []model.MessageID{id})
+	raws, err := p.FetchBodies(ctx, e.messageMailbox(ctx, account, id), []model.MessageID{id})
 	if err != nil {
 		return nil, err
 	}
@@ -84,28 +84,57 @@ func (e *Engine) LoadBodies(ctx context.Context, p provider.Provider, account mo
 		return 0, nil
 	}
 
-	raws, err := p.FetchBodies(ctx, unloaded)
-	if err != nil {
-		return 0, err
+	// Group by the mailbox each message lives in: IMAP body fetches are scoped to
+	// the selected folder, so a thread/batch spanning folders needs one fetch per
+	// folder rather than a single (INBOX-only) call.
+	byMailbox := map[provider.MailboxRef][]model.MessageID{}
+	for _, id := range unloaded {
+		mb := e.messageMailbox(ctx, account, id)
+		byMailbox[mb] = append(byMailbox[mb], id)
 	}
 
 	loaded := 0
 	var errs []error
-	for _, raw := range raws {
-		if raw.ID == "" {
-			continue
-		}
-		parsed, err := mime.Parse(raw.Bytes)
+	for mb, group := range byMailbox {
+		raws, err := p.FetchBodies(ctx, mb, group)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		msg, _ := e.store.Message(ctx, account, raw.ID)
-		if err := e.store.SaveBody(ctx, account, raw.ID, parsed.Parts, parsed.Text, classify.MessageWithHeadersAndBody(msg, parsed.Headers, parsed.Text)); err != nil {
-			errs = append(errs, err)
-			continue
+		for _, raw := range raws {
+			if raw.ID == "" {
+				continue
+			}
+			parsed, err := mime.Parse(raw.Bytes)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			msg, _ := e.store.Message(ctx, account, raw.ID)
+			if err := e.store.SaveBody(ctx, account, raw.ID, parsed.Parts, parsed.Text, classify.MessageWithHeadersAndBody(msg, parsed.Headers, parsed.Text)); err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			loaded++
 		}
-		loaded++
 	}
 	return loaded, errors.Join(errs...)
+}
+
+// messageMailbox resolves the folder a stored message lives in, for body fetches.
+// It prefers INBOX when present (the common case, and what fetching assumed
+// before), otherwise the message's first label; defaults to INBOX when unknown.
+func (e *Engine) messageMailbox(ctx context.Context, account model.AccountID, id model.MessageID) provider.MailboxRef {
+	inbox := provider.MailboxRef{ID: "INBOX", Path: "INBOX"}
+	msg, err := e.store.Message(ctx, account, id)
+	if err != nil || len(msg.Labels) == 0 {
+		return inbox
+	}
+	for _, label := range msg.Labels {
+		if label == "INBOX" {
+			return inbox
+		}
+	}
+	first := msg.Labels[0]
+	return provider.MailboxRef{ID: first, Path: string(first)}
 }

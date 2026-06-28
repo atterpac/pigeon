@@ -60,7 +60,7 @@ func cmdSync(ctx context.Context, args []string) error {
 	defer st.Close()
 	eng := synceng.New(st)
 
-	acct := model.Account{ID: model.AccountID(account), Kind: model.KindGmail, Email: account}
+	acct := model.Account{ID: model.AccountID(account), Kind: model.KindIMAP, Email: account}
 	mbs, err := eng.RegisterAccount(ctx, p, acct)
 	if err != nil {
 		return err

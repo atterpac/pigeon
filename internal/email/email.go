@@ -23,23 +23,26 @@ import (
 
 // Re-exported domain types so callers depend only on this package.
 type (
-	Account        = model.Account
-	AccountID      = model.AccountID
-	Mailbox        = model.Mailbox
-	Message        = model.Message
-	Thread         = model.Thread
-	ThreadID       = model.ThreadID
-	MessageID      = model.MessageID
-	Address        = model.Address
-	Outgoing       = model.Outgoing
-	Outfile        = model.Outfile
-	Part           = model.Part
-	ThreadListItem = model.ThreadListItem
-	Draft          = model.Draft
-	Snoozed        = model.Snoozed
-	Flag           = model.Flag
-	LabelID        = model.LabelID
-	Role           = model.Role
+	Account             = model.Account
+	AccountID           = model.AccountID
+	Mailbox             = model.Mailbox
+	Message             = model.Message
+	Thread              = model.Thread
+	ThreadID            = model.ThreadID
+	MessageID           = model.MessageID
+	Address             = model.Address
+	Outgoing            = model.Outgoing
+	Outfile             = model.Outfile
+	Part                = model.Part
+	ThreadListItem      = model.ThreadListItem
+	Draft               = model.Draft
+	Snoozed             = model.Snoozed
+	Contact             = model.Contact
+	BodyRetentionPolicy = store.BodyRetentionPolicy
+	BodyPruneResult     = store.BodyPruneResult
+	Flag                = model.Flag
+	LabelID             = model.LabelID
+	Role                = model.Role
 
 	// Event is a changefeed notification; subscribe via Client.Events.
 	Event = events.Event
@@ -47,8 +50,7 @@ type (
 
 // Kind constants for accounts.
 const (
-	KindIMAP  = model.KindIMAP
-	KindGmail = model.KindGmail
+	KindIMAP = model.KindIMAP
 )
 
 // Role constants for normalized mailboxes.
@@ -285,6 +287,42 @@ func (c *Client) ThreadMessages(ctx context.Context, acct AccountID, thread Thre
 	return c.store.ThreadMessages(ctx, acct, thread)
 }
 
+// ThreadMessagesWithBodies returns all messages in a thread after fetching and
+// caching any bodies missing from the local store. Use this for foreground
+// thread opens, where a local cache miss should be satisfied immediately rather
+// than showing snippets or issuing one request per message.
+func (c *Client) ThreadMessagesWithBodies(ctx context.Context, acct Account, thread ThreadID) ([]Message, error) {
+	msgs, err := c.store.ThreadMessages(ctx, acct.ID, thread)
+	if err != nil {
+		return nil, err
+	}
+	opened := make([]MessageID, 0, len(msgs))
+	ids := make([]MessageID, 0, len(msgs))
+	for _, msg := range msgs {
+		opened = append(opened, msg.ID)
+		if !msg.BodyLoaded {
+			ids = append(ids, msg.ID)
+		}
+	}
+	if len(ids) == 0 {
+		if err := c.store.TouchMessagesOpened(ctx, acct.ID, opened, time.Now()); err != nil {
+			return nil, err
+		}
+		return msgs, nil
+	}
+	p, err := c.provider(ctx, acct)
+	if err != nil {
+		return nil, err
+	}
+	if n, err := c.eng.LoadBodies(ctx, p, acct.ID, ids); err != nil && n == 0 {
+		return nil, err
+	}
+	if err := c.store.TouchMessagesOpened(ctx, acct.ID, opened, time.Now()); err != nil {
+		return nil, err
+	}
+	return c.store.ThreadMessages(ctx, acct.ID, thread)
+}
+
 // MailboxMessages returns messages in a mailbox/label, newest first.
 func (c *Client) MailboxMessages(ctx context.Context, acct AccountID, mailbox LabelID, limit int) ([]Message, error) {
 	return c.store.MailboxMessages(ctx, acct, mailbox, limit)
@@ -301,6 +339,33 @@ func (c *Client) Search(ctx context.Context, acct AccountID, query string, limit
 	return c.store.Search(ctx, acct, query, limit)
 }
 
+// SearchServer runs a server-side search over the account's inbox, reaching mail
+// not yet synced locally. Hits are cached into the local store (so they're
+// openable like any other message) and returned newest-first. Returns nil when
+// the provider doesn't support server search.
+func (c *Client) SearchServer(ctx context.Context, acct Account, query string, limit int) ([]Message, error) {
+	p, err := c.provider(ctx, acct)
+	if err != nil {
+		return nil, err
+	}
+	if !p.Capabilities().ServerSearch {
+		return nil, nil
+	}
+	mb := provider.MailboxRef{ID: InboxLabel, Path: string(InboxLabel)}
+	msgs, err := p.Search(ctx, mb, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(msgs) > 0 {
+		// Cache envelopes so results open without another round-trip and dedup
+		// against locally-synced mail by id.
+		if err := c.store.SaveMessages(ctx, msgs); err != nil {
+			return nil, err
+		}
+	}
+	return msgs, nil
+}
+
 // MessageBody returns a message's decoded parts (inline bodies + attachments).
 // The first call fetches from the provider, parses the MIME, persists the parts,
 // and makes the body searchable; subsequent calls are served from the local
@@ -310,7 +375,18 @@ func (c *Client) MessageBody(ctx context.Context, acct Account, id MessageID) ([
 	if err != nil {
 		return nil, err
 	}
-	return c.eng.LoadBody(ctx, p, acct.ID, id)
+	parts, err := c.eng.LoadBody(ctx, p, acct.ID, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.store.TouchMessagesOpened(ctx, acct.ID, []MessageID{id}, time.Now()); err != nil {
+		return nil, err
+	}
+	return parts, nil
+}
+
+func (c *Client) PruneBodies(ctx context.Context, acct AccountID, policy BodyRetentionPolicy) (BodyPruneResult, error) {
+	return c.store.PruneBodies(ctx, acct, policy, time.Now())
 }
 
 // PreloadMailboxBodies fetches and caches bodies for the newest messages in a
@@ -394,6 +470,58 @@ func (c *Client) Send(ctx context.Context, acct Account, out Outgoing) (sent boo
 	return n > 0, err
 }
 
+// SendHeld delivers a message with an optional pre-delivery hold (the undo-send
+// window). With hold<=0 it behaves like Send — delivers immediately, returns 0.
+// Otherwise it parks the message in the outbox until now+hold and returns the
+// op id, so CancelSend can recall it within the window; the background outbox
+// loop delivers it once the hold elapses.
+func (c *Client) SendHeld(ctx context.Context, acct Account, out Outgoing, hold time.Duration) (int64, error) {
+	if out.From.Addr == "" {
+		out.From = Address{Addr: acct.Email}
+	}
+	raw, err := mime.Build(out, time.Now(), genMessageID(acct.Email))
+	if err != nil {
+		return 0, err
+	}
+	if hold <= 0 {
+		if err := c.eng.EnqueueSend(ctx, acct.ID, model.RawMessage{Bytes: raw}, provider.SendOpts{Thread: out.Thread}); err != nil {
+			return 0, err
+		}
+		p, err := c.provider(ctx, acct)
+		if err != nil {
+			return 0, err
+		}
+		_, err = c.eng.DrainOutbox(ctx, p, acct.ID)
+		return 0, err
+	}
+	id, err := c.eng.EnqueueSendAt(ctx, acct.ID, model.RawMessage{Bytes: raw}, provider.SendOpts{Thread: out.Thread}, time.Now().Add(hold))
+	if err == nil {
+		// Deliver right when the hold elapses instead of waiting for the next
+		// outbox tick. Best-effort: if the send was cancelled, the op is gone and
+		// this drain is a no-op; the background loop remains the durable fallback.
+		c.scheduleDrain(acct, hold)
+	}
+	return id, err
+}
+
+// scheduleDrain fires a one-shot outbox drain for acct after the given delay.
+func (c *Client) scheduleDrain(acct Account, after time.Duration) {
+	time.AfterFunc(after, func() {
+		ctx := context.Background()
+		p, err := c.provider(ctx, acct)
+		if err != nil {
+			return
+		}
+		_, _ = c.eng.DrainOutbox(ctx, p, acct.ID)
+	})
+}
+
+// CancelSend recalls a held send by op id before its hold elapses. Returns false
+// if the message was already delivered.
+func (c *Client) CancelSend(ctx context.Context, acct Account, opID int64) (bool, error) {
+	return c.eng.CancelSend(ctx, acct.ID, opID)
+}
+
 // InboxLabel is the label/mailbox treated as "the inbox" for Archive.
 const InboxLabel LabelID = "INBOX"
 
@@ -434,12 +562,10 @@ func (c *Client) Star(ctx context.Context, acct Account, ids []MessageID, on boo
 // the Done-today metric.
 func (c *Client) Archive(ctx context.Context, acct Account, ids []MessageID) error {
 	_ = c.store.RecordDone(ctx, acct.ID, ids, time.Now())
-	if acct.Kind == KindIMAP {
-		if archive, ok := c.archiveMailbox(ctx, acct.ID); ok {
-			return c.mutate(ctx, acct, func(id AccountID) error {
-				return c.eng.Move(ctx, id, ids, archive)
-			})
-		}
+	if archive, ok := c.archiveMailbox(ctx, acct.ID); ok {
+		return c.mutate(ctx, acct, func(id AccountID) error {
+			return c.eng.Move(ctx, id, ids, archive)
+		})
 	}
 	return c.mutate(ctx, acct, func(id AccountID) error {
 		return c.eng.ApplyLabels(ctx, id, ids, nil, []LabelID{InboxLabel})
@@ -487,9 +613,30 @@ func (c *Client) Move(ctx context.Context, acct Account, ids []MessageID, dst La
 	return nil
 }
 
-// Delete moves messages to Trash.
+// Delete moves messages to Trash. When the account has a Trash mailbox this is a
+// reversible IMAP move (so it can be undone, and the message stays in the local
+// store under the Trash folder); only without one does it fall back to a hard
+// \Deleted + expunge.
 func (c *Client) Delete(ctx context.Context, acct Account, ids []MessageID) error {
+	if trash, ok := c.trashMailbox(ctx, acct.ID); ok {
+		return c.mutate(ctx, acct, func(id AccountID) error {
+			return c.eng.Move(ctx, id, ids, trash)
+		})
+	}
 	return c.mutate(ctx, acct, func(id AccountID) error { return c.eng.Delete(ctx, id, ids) })
+}
+
+func (c *Client) trashMailbox(ctx context.Context, acct AccountID) (LabelID, bool) {
+	mailboxes, err := c.store.Mailboxes(ctx, acct)
+	if err != nil {
+		return "", false
+	}
+	for _, mailbox := range mailboxes {
+		if mailbox.Role == RoleTrash {
+			return mailbox.ID, true
+		}
+	}
+	return "", false
 }
 
 // ── drafts (local, autosaved) ───────────────────────────────────
@@ -557,6 +704,15 @@ func (c *Client) Unsnooze(ctx context.Context, acct Account, ids []MessageID) er
 // Snoozed lists current snoozes for an account.
 func (c *Client) Snoozed(ctx context.Context, acct AccountID) ([]Snoozed, error) {
 	return c.store.ListSnoozes(ctx, acct)
+}
+
+// ── contacts ────────────────────────────────────────────────────
+
+// SearchContacts returns address-book entries (harvested from message envelopes
+// during sync) matching query, ranked by frequency then recency. Drives
+// recipient autocomplete in compose.
+func (c *Client) SearchContacts(ctx context.Context, acct AccountID, query string, limit int) ([]Contact, error) {
+	return c.store.SearchContacts(ctx, acct, query, limit)
 }
 
 // DoneToday counts messages archived ("done") since local midnight.

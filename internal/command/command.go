@@ -5,12 +5,11 @@
 package command
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
+	"strings"
 
 	"github.com/atterpac/email/internal/auth"
 )
@@ -80,38 +79,36 @@ func credStore() auth.CredentialStore {
 	}
 }
 
-// googleCredPath resolves the client_secret.json location.
-func googleCredPath() string {
-	if p := os.Getenv("EMAIL_GOOGLE_CREDENTIALS"); p != "" {
-		return p
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, "creds", "google", "birdie", "client_secret.json")
-}
-
-// cmdAuth runs the Gmail OAuth loopback flow and stores the credential.
+// cmdAuth stores an IMAP/SMTP app password for account. The password is read
+// from EMAIL_APP_PASSWORD, or prompted on stdin when that is unset. Spaces (as
+// shown in grouped app passwords) are stripped.
 func cmdAuth(ctx context.Context, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: email auth <account-email>")
 	}
 	account := args[0]
-	cfg, err := auth.LoadGoogleConfig(googleCredPath())
-	if err != nil {
-		return err
+	password := os.Getenv("EMAIL_APP_PASSWORD")
+	if password == "" {
+		fmt.Print("App password: ")
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil && line == "" {
+			return fmt.Errorf("read password: %w", err)
+		}
+		password = line
 	}
-	cred, err := auth.InteractiveAuth(ctx, cfg, openBrowser)
-	if err != nil {
-		return err
+	password = strings.ReplaceAll(strings.TrimSpace(password), " ", "")
+	if password == "" {
+		return fmt.Errorf("password is required")
 	}
 	store := credStore()
-	if err := store.Set(ctx, account, cred); err != nil {
+	if err := store.Set(ctx, account, auth.Credential{Password: password}); err != nil {
 		return fmt.Errorf("store credential: %w", err)
 	}
-	fmt.Printf("authorized %s — refresh token stored\n", account)
+	fmt.Printf("stored app password for %s\n", account)
 	return nil
 }
 
-// cmdAuthStatus reads the stored credential and forces a token refresh to prove
+// cmdAuthStatus reads the stored credential and opens an IMAP session to prove
 // it is valid end-to-end.
 func cmdAuthStatus(ctx context.Context, args []string) error {
 	if len(args) != 1 {
@@ -123,32 +120,21 @@ func cmdAuthStatus(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("read credential: %w", err)
 	}
-	fmt.Printf("stored: oauth=%v hasRefresh=%v expiry=%s\n",
-		cred.IsOAuth(), cred.RefreshToken != "", cred.Expiry.Format("2006-01-02 15:04:05"))
-
-	cfg, err := auth.LoadGoogleConfig(googleCredPath())
+	if cred.Password == "" {
+		return fmt.Errorf("no password stored for %s (run `email auth %s`)", account, account)
+	}
+	ep, err := resolveEndpoint(account)
 	if err != nil {
 		return err
 	}
-	ts := auth.TokenSource(ctx, cfg, store, account, cred)
-	tok, err := ts.Token()
+	p, err := newProvider(ctx, account)
 	if err != nil {
-		return fmt.Errorf("refresh: %w", err)
+		return err
 	}
-	fmt.Printf("refresh OK — access token valid until %s\n", tok.Expiry.Format("2006-01-02 15:04:05"))
+	defer p.Close()
+	if _, err := p.ListMailboxes(ctx); err != nil {
+		return fmt.Errorf("login failed: %w", err)
+	}
+	fmt.Printf("login OK for %s (imap %s:%d)\n", account, ep.host, ep.port)
 	return nil
-}
-
-func openBrowser(url string) error {
-	var cmd string
-	var args []string
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = "open"
-	case "windows":
-		cmd, args = "rundll32", []string{"url.dll,FileProtocolHandler"}
-	default:
-		cmd = "xdg-open"
-	}
-	return exec.Command(cmd, append(args, url)...).Start()
 }

@@ -49,7 +49,10 @@ func (f *fakeProvider) Backfill(_ context.Context, _ provider.MailboxRef, page *
 	return ch, &provider.Cursor{Bytes: b}, false, nil
 }
 
-func (f *fakeProvider) FetchBodies(context.Context, []model.MessageID) ([]model.RawMessage, error) {
+func (f *fakeProvider) FetchBodies(context.Context, provider.MailboxRef, []model.MessageID) ([]model.RawMessage, error) {
+	return nil, nil
+}
+func (f *fakeProvider) Search(context.Context, provider.MailboxRef, string, int) ([]model.Message, error) {
 	return nil, nil
 }
 func (f *fakeProvider) ApplyFlags(context.Context, []model.MessageID, []model.Flag, []model.Flag) error {

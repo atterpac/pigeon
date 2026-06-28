@@ -125,7 +125,7 @@ func (s *Store) Parts(ctx context.Context, account model.AccountID, id model.Mes
 	for i, r := range rows {
 		out[i] = model.Part{
 			ContentType: r.ContentType, Charset: r.Charset, Disposition: r.Disposition,
-			Filename: r.Filename, Size: r.Size, Content: r.Content, BlobRef: r.BlobRef,
+			Filename: r.Filename, ContentID: r.ContentID, Size: r.Size, Content: r.Content, BlobRef: r.BlobRef,
 		}
 	}
 	return out, nil
@@ -144,6 +144,7 @@ func rowToMessage(r gen.Message) model.Message {
 		ID: model.MessageID(r.ID), Thread: model.ThreadID(r.Thread), Account: model.AccountID(r.Account),
 		Subject: r.Subject, Snippet: r.Snippet, Date: time.Unix(r.Date, 0),
 		Category: model.Category(r.Category), Flags: splitFlags(r.Flags), HasAttachments: r.HasAttachments != 0, BodyLoaded: r.BodyLoaded != 0,
+		BodyCachedAt: unixTime(r.BodyCachedAt), LastOpenedAt: unixTime(r.LastOpenedAt),
 		RFCMessageID: r.RfcMessageID, References: strings.Fields(r.Refs),
 	}
 	_ = json.Unmarshal([]byte(r.FromJson), &m.From)
@@ -151,6 +152,13 @@ func rowToMessage(r gen.Message) model.Message {
 	_ = json.Unmarshal([]byte(r.CcJson), &m.Cc)
 	_ = json.Unmarshal([]byte(r.BccJson), &m.Bcc)
 	return m
+}
+
+func unixTime(sec int64) time.Time {
+	if sec == 0 {
+		return time.Time{}
+	}
+	return time.Unix(sec, 0)
 }
 
 // loadLabels populates Labels for the given messages with a single query.

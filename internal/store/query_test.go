@@ -65,6 +65,36 @@ func TestSearchOperators(t *testing.T) {
 	}
 }
 
+func TestSearchMatchesTokenPrefix(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(ctx, filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	const acct model.AccountID = "a@x.io"
+	if err := s.UpsertAccount(ctx, model.Account{ID: acct, Email: string(acct)}); err != nil {
+		t.Fatal(err)
+	}
+	msg := model.Message{
+		ID: "m1", Account: acct, Thread: "t1", Subject: "Baboon report",
+		From: []model.Address{{Addr: "sender@example.com"}}, Date: time.Unix(1_700_000_000, 0),
+		Labels: []model.LabelID{"INBOX"},
+	}
+	if err := s.SaveMessages(ctx, []model.Message{msg}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.Search(ctx, acct, "Baboo", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != msg.ID {
+		t.Fatalf("prefix search should match Baboon, got %#v", got)
+	}
+}
+
 func TestThreadListItems(t *testing.T) {
 	s, ctx, acct := seed(t)
 	defer s.Close()

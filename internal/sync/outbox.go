@@ -21,15 +21,29 @@ type sendPayload struct {
 	Thread model.ThreadID `json:"thread,omitempty"`
 }
 
-// EnqueueSend queues a built RFC 5322 message for delivery. It returns once the
-// message is durably in the outbox; DrainOutbox performs the actual send, so
-// this works offline.
+// EnqueueSend queues a built RFC 5322 message for immediate delivery. It returns
+// once the message is durably in the outbox; DrainOutbox performs the actual
+// send, so this works offline.
 func (e *Engine) EnqueueSend(ctx context.Context, acct model.AccountID, raw model.RawMessage, opts provider.SendOpts) error {
+	_, err := e.EnqueueSendAt(ctx, acct, raw, opts, time.Now())
+	return err
+}
+
+// EnqueueSendAt queues a send parked until runAt — the undo-send window. The op
+// is not drained here; the background outbox loop delivers it once runAt passes.
+// Returns the op id so the caller can CancelSend before then.
+func (e *Engine) EnqueueSendAt(ctx context.Context, acct model.AccountID, raw model.RawMessage, opts provider.SendOpts, runAt time.Time) (int64, error) {
 	b, err := json.Marshal(sendPayload{Raw: raw.Bytes, Thread: opts.Thread})
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return e.store.EnqueueOp(ctx, acct, OpSend, b, time.Now())
+	return e.store.EnqueueOp(ctx, acct, OpSend, b, runAt)
+}
+
+// CancelSend removes a still-parked send op (undo send). Returns false if the op
+// was already delivered (and thus can no longer be recalled).
+func (e *Engine) CancelSend(ctx context.Context, acct model.AccountID, id int64) (bool, error) {
+	return e.store.CancelSend(ctx, acct, id)
 }
 
 // maxAttempts caps outbox retries before an op is given up on (left in place

@@ -12,27 +12,16 @@ import (
 
 	"github.com/atterpac/email/internal/model"
 	"github.com/atterpac/email/internal/provider"
-	gmailprov "github.com/atterpac/email/internal/provider/gmail"
 	synceng "github.com/atterpac/email/internal/sync"
 )
-
-// gmailRESTProvider builds the native Gmail-API provider.
-func gmailRESTProvider(ctx context.Context, account string) (*gmailprov.Provider, error) {
-	ts, err := tokenSource(ctx, account)
-	if err != nil {
-		return nil, err
-	}
-	return gmailprov.New(ctx, model.AccountID(account), ts)
-}
 
 // cmdDaemon runs the continuous background sync loop for an account: forward
 // polling + resumable backfill, rate-limited, until interrupted.
 //
 //	email daemon <account-email> [labels=INBOX,SENT] [pollSeconds=60] [pageSize=100] [rps=5]
 //
-// For Gmail, backfilling the "All Mail" label (id: "[Gmail]/All Mail" over IMAP,
-// but "INBOX"/system label ids over REST) is recommended to avoid per-folder
-// duplication — here we default to INBOX for clarity.
+// For Gmail over IMAP, backfilling the "[Gmail]/All Mail" label is recommended
+// to avoid per-folder duplication — here we default to INBOX for clarity.
 func cmdDaemon(ctx context.Context, args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: email daemon <account-email> [labels=INBOX] [pollSeconds=60] [pageSize=100] [rps=5]")
@@ -65,7 +54,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	acct := model.Account{ID: model.AccountID(account), Kind: model.KindGmail, Email: account}
+	acct := model.Account{ID: model.AccountID(account), Kind: model.KindIMAP, Email: account}
 	fmt.Printf("daemon started for %s (labels=%v, poll=%s, rps=%d)\n", account, labels, poll, rps)
 
 	err = eng.RunAccount(ctx, p, acct, refs, synceng.Options{

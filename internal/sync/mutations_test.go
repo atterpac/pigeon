@@ -114,3 +114,38 @@ func TestMoveRemovesInboxLocallyAndDrainsProviderMove(t *testing.T) {
 		t.Fatalf("expected 1 Move call, got %d", p.moveCalls)
 	}
 }
+
+// Moving a message back INTO the inbox (the undo-archive path) must keep the
+// INBOX label. Regression: adds run before removes in ApplyFlagDeltas, so a
+// blanket "remove INBOX" cancelled the add and the mail never reappeared.
+func TestMoveIntoInboxKeepsInboxLabel(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	const acct model.AccountID = "a@x.io"
+	_ = st.UpsertAccount(ctx, model.Account{ID: acct, Email: string(acct)})
+	// Start in Archive (as if previously archived), not in the inbox.
+	msg := model.Message{
+		ID: "m1", Account: acct, Thread: "t1", Subject: "hi",
+		Labels: []model.LabelID{"Archive"}, Date: time.Unix(1, 0),
+	}
+	if err := st.SaveMessages(ctx, []model.Message{msg}); err != nil {
+		t.Fatal(err)
+	}
+
+	eng := New(st)
+	if err := eng.Move(ctx, acct, []model.MessageID{msg.ID}, "INBOX"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.Message(ctx, acct, msg.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(got.Labels, model.LabelID("INBOX")) {
+		t.Fatalf("expected move into inbox to keep INBOX label, got %v", got.Labels)
+	}
+}

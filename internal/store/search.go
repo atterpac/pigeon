@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/atterpac/email/internal/model"
 )
@@ -78,6 +79,21 @@ func parseSearch(q string) searchQuery {
 	return sq
 }
 
+func ftsPrefixQuery(terms []string) string {
+	var tokens []string
+	for _, term := range terms {
+		for _, token := range strings.FieldsFunc(term, func(r rune) bool {
+			return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_')
+		}) {
+			if token == "" {
+				continue
+			}
+			tokens = append(tokens, strings.ToLower(token)+"*")
+		}
+	}
+	return strings.Join(tokens, " ")
+}
+
 // Search runs a structured local query (operators + full text), newest first.
 func (s *Store) Search(ctx context.Context, account model.AccountID, query string, limit int) ([]model.Message, error) {
 	if limit <= 0 {
@@ -96,10 +112,10 @@ func (s *Store) Search(ctx context.Context, account model.AccountID, query strin
 	)
 
 	// Free-text terms use the FTS index.
-	if len(sq.terms) > 0 {
+	if fts := ftsPrefixQuery(sq.terms); fts != "" {
 		joins = append(joins, "JOIN messages_fts f ON m.rowid = f.rowid")
 		wheres = append(wheres, "messages_fts MATCH ?")
-		args = append(args, strings.Join(sq.terms, " "))
+		args = append(args, fts)
 	}
 	for _, v := range sq.from {
 		like("m.from_json", v)

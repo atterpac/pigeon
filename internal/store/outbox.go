@@ -16,8 +16,8 @@ type Op struct {
 	Attempts int
 }
 
-// EnqueueOp appends an operation to the outbox, due at runAt.
-func (s *Store) EnqueueOp(ctx context.Context, account model.AccountID, op string, payload []byte, runAt time.Time) error {
+// EnqueueOp appends an operation to the outbox, due at runAt, and returns its id.
+func (s *Store) EnqueueOp(ctx context.Context, account model.AccountID, op string, payload []byte, runAt time.Time) (int64, error) {
 	return s.q.EnqueueOp(ctx, gen.EnqueueOpParams{
 		Account: string(account),
 		Op:      op,
@@ -25,6 +25,15 @@ func (s *Store) EnqueueOp(ctx context.Context, account model.AccountID, op strin
 		NextAt:  runAt.Unix(),
 		Created: time.Now().Unix(),
 	})
+}
+
+// CancelSend removes a still-queued send op (the undo-send window). It only
+// matches op='send' for the account, so it can never cancel a mutation, and
+// no-ops once the op has already been delivered and deleted. Returns whether a
+// row was removed.
+func (s *Store) CancelSend(ctx context.Context, account model.AccountID, id int64) (bool, error) {
+	n, err := s.q.CancelSendOp(ctx, gen.CancelSendOpParams{Account: string(account), ID: id})
+	return n > 0, err
 }
 
 // ReadyOps returns operations due at or before now, oldest first.

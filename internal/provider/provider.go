@@ -65,7 +65,17 @@ type Provider interface {
 	// true once no older messages remain.
 	Backfill(ctx context.Context, mb MailboxRef, page *Cursor, limit int) (changes Changes, next *Cursor, done bool, err error)
 
-	FetchBodies(ctx context.Context, ids []model.MessageID) ([]model.RawMessage, error)
+	// FetchBodies fetches raw messages by id from the given mailbox. The mailbox
+	// matters because IMAP UID/HEADER lookups are scoped to the selected mailbox —
+	// a message only resolves in the folder it actually lives in.
+	FetchBodies(ctx context.Context, mb MailboxRef, ids []model.MessageID) ([]model.RawMessage, error)
+
+	// Search runs a server-side query over the mailbox and returns matching
+	// envelopes (newest first), up to limit. It reaches mail that may not be
+	// synced locally; coverage/semantics follow the server's SEARCH support
+	// (Capabilities().ServerSearch reports availability). Returns nil when the
+	// query is empty or the server has no matches.
+	Search(ctx context.Context, mb MailboxRef, query string, limit int) ([]model.Message, error)
 
 	ApplyFlags(ctx context.Context, ids []model.MessageID, add, remove []model.Flag) error
 	ApplyLabels(ctx context.Context, ids []model.MessageID, add, remove []model.LabelID) error

@@ -43,6 +43,10 @@ func (s *Session) ThreadMessages(ctx context.Context, thread ThreadID) ([]Messag
 	return s.c.ThreadMessages(ctx, s.acct.ID, thread)
 }
 
+func (s *Session) ThreadMessagesWithBodies(ctx context.Context, thread ThreadID) ([]Message, error) {
+	return s.c.ThreadMessagesWithBodies(ctx, s.acct, thread)
+}
+
 func (s *Session) MailboxMessages(ctx context.Context, mailbox LabelID, limit int) ([]Message, error) {
 	return s.c.MailboxMessages(ctx, s.acct.ID, mailbox, limit)
 }
@@ -63,6 +67,10 @@ func (s *Session) MessageBody(ctx context.Context, id MessageID) ([]Part, error)
 
 func (s *Session) PreloadMailboxBodies(ctx context.Context, mailbox LabelID, limit int) (int, error) {
 	return s.c.PreloadMailboxBodies(ctx, s.acct, mailbox, limit)
+}
+
+func (s *Session) PruneBodies(ctx context.Context, policy BodyRetentionPolicy) (BodyPruneResult, error) {
+	return s.c.PruneBodies(ctx, s.acct.ID, policy)
 }
 
 func (s *Session) ReclassifyMailbox(ctx context.Context, mailbox LabelID, limit int) (int, error) {
