@@ -17,7 +17,7 @@ func TestOutboxEnqueueDrainAndRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	const acct model.AccountID = "a@x.io"
 	if err := st.UpsertAccount(ctx, model.Account{ID: acct, Email: string(acct)}); err != nil {

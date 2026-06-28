@@ -101,7 +101,7 @@ func TestBackfillAndSearch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	const acct model.AccountID = "a@x.io"
 	mb := model.Mailbox{ID: "INBOX", Account: acct, Name: "INBOX", Role: model.RoleInbox}

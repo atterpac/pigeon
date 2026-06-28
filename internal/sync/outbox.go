@@ -50,6 +50,14 @@ func (e *Engine) CancelSend(ctx context.Context, acct model.AccountID, id int64)
 // with a far-future schedule for inspection).
 const maxAttempts = 8
 
+// drainBatchSize caps how many ready ops a single drain pulls and attempts.
+const drainBatchSize = 50
+
+// parkInterval is how far out an op is rescheduled once it exhausts
+// maxAttempts: effectively permanent, so it stops retrying on every drain but
+// stays in the outbox for inspection rather than being silently dropped.
+const parkInterval = 100 * 365 * 24 * time.Hour
+
 // DrainOutbox delivers ready outbox ops for an account. Failures are retried
 // with exponential backoff; successes are removed. Returns the number sent.
 func (e *Engine) DrainOutbox(ctx context.Context, p provider.Provider, acct model.AccountID) (int, error) {
@@ -58,7 +66,13 @@ func (e *Engine) DrainOutbox(ctx context.Context, p provider.Provider, acct mode
 
 // drainOutboxAt is DrainOutbox with an injectable clock for tests.
 func (e *Engine) drainOutboxAt(ctx context.Context, p provider.Provider, acct model.AccountID, now time.Time) (int, error) {
-	ops, err := e.store.ReadyOps(ctx, acct, now, 50)
+	// Serialize drains per account: without this, two goroutines can read the
+	// same ready op and deliver it twice (the store has no lease).
+	mu := e.drainLock(acct)
+	mu.Lock()
+	defer mu.Unlock()
+
+	ops, err := e.store.ReadyOps(ctx, acct, now, drainBatchSize)
 	if err != nil {
 		return 0, err
 	}
@@ -68,7 +82,7 @@ func (e *Engine) drainOutboxAt(ctx context.Context, p provider.Provider, acct mo
 	sent := 0
 	for _, op := range ops {
 		opErr := e.runOp(ctx, p, op)
-		if opErr == errDropOp {
+		if errors.Is(opErr, errDropOp) {
 			_ = e.store.DeleteOp(ctx, op.ID)
 			continue
 		}
@@ -82,7 +96,7 @@ func (e *Engine) drainOutboxAt(ctx context.Context, p provider.Provider, acct mo
 		// Reschedule with backoff.
 		next := now.Add(backoff(op.Attempts + 1))
 		if op.Attempts+1 >= maxAttempts {
-			next = now.Add(24 * time.Hour) // park it
+			next = now.Add(parkInterval) // exhausted: park indefinitely, don't keep retrying
 		}
 		if err := e.store.BumpOp(ctx, op.ID, next); err != nil {
 			return sent, err

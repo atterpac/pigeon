@@ -7,6 +7,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/atterpac/email/internal/model"
 	"github.com/atterpac/email/internal/provider"
@@ -16,10 +17,31 @@ import (
 // Engine orchestrates sync between providers and the local store.
 type Engine struct {
 	store *store.Store
+
+	// drainMu guards drains, keyed per account, so concurrent DrainOutbox calls
+	// (the outbox loop, command-triggered sends, and others sharing this Engine)
+	// can't both read the same ready op and deliver it twice. There is no
+	// store-level lease, so serialization lives here.
+	mu     sync.Mutex
+	drains map[model.AccountID]*sync.Mutex
 }
 
 // New returns an engine bound to a store.
-func New(s *store.Store) *Engine { return &Engine{store: s} }
+func New(s *store.Store) *Engine {
+	return &Engine{store: s, drains: map[model.AccountID]*sync.Mutex{}}
+}
+
+// drainLock returns the per-account mutex that serializes outbox drains.
+func (e *Engine) drainLock(acct model.AccountID) *sync.Mutex {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	m := e.drains[acct]
+	if m == nil {
+		m = &sync.Mutex{}
+		e.drains[acct] = m
+	}
+	return m
+}
 
 // RegisterAccount persists the account and its mailbox topology.
 func (e *Engine) RegisterAccount(ctx context.Context, p provider.Provider, acct model.Account) ([]model.Mailbox, error) {

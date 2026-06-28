@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"github.com/atterpac/email/internal/classify"
 	"github.com/atterpac/email/internal/mime"
@@ -30,7 +31,10 @@ func (e *Engine) LoadBody(ctx context.Context, p provider.Provider, account mode
 	if err != nil {
 		return nil, err
 	}
-	msg, _ := e.store.Message(ctx, account, id)
+	msg, err := e.store.Message(ctx, account, id)
+	if err != nil {
+		slog.Debug("body: message lookup failed; classifying on zero message", "account", account, "id", id, "err", err)
+	}
 	if err := e.store.SaveBody(ctx, account, id, parsed.Parts, parsed.Text, classify.MessageWithHeadersAndBody(msg, parsed.Headers, parsed.Text)); err != nil {
 		return nil, err
 	}
@@ -110,7 +114,10 @@ func (e *Engine) LoadBodies(ctx context.Context, p provider.Provider, account mo
 				errs = append(errs, err)
 				continue
 			}
-			msg, _ := e.store.Message(ctx, account, raw.ID)
+			msg, err := e.store.Message(ctx, account, raw.ID)
+			if err != nil {
+				slog.Debug("body: message lookup failed; classifying on zero message", "account", account, "id", raw.ID, "err", err)
+			}
 			if err := e.store.SaveBody(ctx, account, raw.ID, parsed.Parts, parsed.Text, classify.MessageWithHeadersAndBody(msg, parsed.Headers, parsed.Text)); err != nil {
 				errs = append(errs, err)
 				continue

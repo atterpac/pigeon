@@ -110,12 +110,14 @@ func (e *Engine) RunAccount(ctx context.Context, p provider.Provider, acct model
 	g.Go(func() error { return e.warmLoop(ctx, p, acct.ID, refs, opt, wait, inboxPrimed, warmDone) })
 	g.Go(func() error { return e.backfillLoop(ctx, p, acct.ID, refs, opt, wait, warmDone) })
 	g.Go(func() error { return e.outboxLoop(ctx, p, acct.ID, opt, wait) })
-	g.Go(func() error { return e.snoozeLoop(ctx, p, acct.ID, opt) })
+	g.Go(func() error { return e.snoozeLoop(ctx, acct.ID, opt) })
 	return g.Wait()
 }
 
-// snoozeLoop returns elapsed snoozes to the inbox on a timer.
-func (e *Engine) snoozeLoop(ctx context.Context, p provider.Provider, acct model.AccountID, opt Options) error {
+// snoozeLoop returns elapsed snoozes to the inbox on a timer. The relabel is
+// queued to the outbox; the outbox loop delivers it, so snooze does no provider
+// I/O of its own.
+func (e *Engine) snoozeLoop(ctx context.Context, acct model.AccountID, opt Options) error {
 	ticker := time.NewTicker(opt.SnoozeInterval)
 	defer ticker.Stop()
 	for {
@@ -123,7 +125,7 @@ func (e *Engine) snoozeLoop(ctx context.Context, p provider.Provider, acct model
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			n, err := e.ProcessDueSnoozes(ctx, p, acct, time.Now())
+			n, err := e.ProcessDueSnoozes(ctx, acct, time.Now())
 			if err != nil {
 				opt.Logger.Warn("snooze processing failed", "err", err)
 				continue
@@ -174,22 +176,25 @@ func (e *Engine) forwardLoop(ctx context.Context, p provider.Provider, acct mode
 	// notify is false for the priming pass so launch doesn't fire a
 	// notification for every message already in the mailbox; later polls and
 	// push hints notify normally.
+	syncOne := func(ref provider.MailboxRef, notify bool) {
+		if err := wait(ctx); err != nil {
+			return
+		}
+		msgs, err := e.SyncForward(ctx, p, acct, ref)
+		if err != nil {
+			opt.Logger.Warn("forward sync failed", "mailbox", ref.Path, "err", err)
+			return
+		}
+		if len(msgs) > 0 {
+			opt.Logger.Info("forward sync", "mailbox", ref.Path, "new", len(msgs))
+			if notify && opt.OnNewMail != nil {
+				opt.OnNewMail(acct, ref, msgs)
+			}
+		}
+	}
 	syncAll := func(notify bool) {
 		for _, ref := range refs {
-			if err := wait(ctx); err != nil {
-				return
-			}
-			msgs, err := e.SyncForward(ctx, p, acct, ref)
-			if err != nil {
-				opt.Logger.Warn("forward sync failed", "mailbox", ref.Path, "err", err)
-				continue
-			}
-			if len(msgs) > 0 {
-				opt.Logger.Info("forward sync", "mailbox", ref.Path, "new", len(msgs))
-				if notify && opt.OnNewMail != nil {
-					opt.OnNewMail(acct, ref, msgs)
-				}
-			}
+			syncOne(ref, notify)
 		}
 	}
 
@@ -202,8 +207,15 @@ func (e *Engine) forwardLoop(ctx context.Context, p provider.Provider, acct mode
 			return ctx.Err()
 		case <-ticker.C:
 			syncAll(true)
-		case <-hints:
-			syncAll(true)
+		case ref, ok := <-hints:
+			// A push hint names the changed mailbox: sync just that one rather
+			// than every mailbox. A closed channel (provider stopped watching)
+			// is disabled so it can't spin the loop.
+			if !ok {
+				hints = nil
+				continue
+			}
+			syncOne(ref, true)
 		}
 	}
 }

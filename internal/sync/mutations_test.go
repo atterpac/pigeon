@@ -17,7 +17,7 @@ func TestMutationsOptimisticAndDrained(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	const acct model.AccountID = "a@x.io"
 	_ = st.UpsertAccount(ctx, model.Account{ID: acct, Email: string(acct)})
@@ -79,7 +79,7 @@ func TestMoveRemovesInboxLocallyAndDrainsProviderMove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	const acct model.AccountID = "a@x.io"
 	_ = st.UpsertAccount(ctx, model.Account{ID: acct, Email: string(acct)})
@@ -124,7 +124,7 @@ func TestMoveIntoInboxKeepsInboxLabel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	const acct model.AccountID = "a@x.io"
 	_ = st.UpsertAccount(ctx, model.Account{ID: acct, Email: string(acct)})
