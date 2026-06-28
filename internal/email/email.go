@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -53,6 +54,9 @@ const (
 	KindIMAP = model.KindIMAP
 )
 
+// InboxLabel is the label/mailbox treated as "the inbox" for Archive.
+const InboxLabel LabelID = "INBOX"
+
 // Role constants for normalized mailboxes.
 const (
 	RoleNone    = model.RoleNone
@@ -86,6 +90,8 @@ type Client struct {
 	mu        sync.Mutex
 	providers map[AccountID]provider.Provider
 	daemons   map[AccountID]context.CancelFunc
+	drains    map[*time.Timer]struct{} // pending held-send drains, cancelled on Close
+	closed    bool
 }
 
 // Open initializes the store (running migrations) and the sync engine.
@@ -103,19 +109,36 @@ func Open(ctx context.Context, cfg Config) (*Client, error) {
 		factory:   cfg.Provider,
 		providers: map[AccountID]provider.Provider{},
 		daemons:   map[AccountID]context.CancelFunc{},
+		drains:    map[*time.Timer]struct{}{},
 	}, nil
 }
 
-// provider returns the cached backend for acct, building it on first use.
+// provider returns the cached backend for acct, building it on first use. The
+// factory (credential resolution, IMAP/REST selection) can block on I/O, so it
+// runs without c.mu held — otherwise one account's cold start would serialize
+// every other Client operation.
 func (c *Client) provider(ctx context.Context, acct Account) (provider.Provider, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if p, ok := c.providers[acct.ID]; ok {
+		c.mu.Unlock()
 		return p, nil
 	}
+	c.mu.Unlock()
+
 	p, err := c.factory(ctx, acct)
 	if err != nil {
 		return nil, err
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed { // Client shut down while we were building; don't leak the provider
+		_ = p.Close()
+		return nil, fmt.Errorf("email: client is closed")
+	}
+	if existing, ok := c.providers[acct.ID]; ok { // lost a concurrent build; keep the winner
+		_ = p.Close()
+		return existing, nil
 	}
 	c.providers[acct.ID] = p
 	return p, nil
@@ -169,11 +192,11 @@ func (c *Client) CreateMailbox(ctx context.Context, acct Account, name string) (
 	}
 	mb, err := p.CreateMailbox(ctx, name)
 	if err != nil {
-		return Mailbox{}, err
+		return Mailbox{}, fmt.Errorf("create mailbox %q: %w", name, err)
 	}
 	mb.Account = acct.ID
 	if err := c.store.UpsertMailboxes(ctx, []Mailbox{mb}); err != nil {
-		return Mailbox{}, err
+		return Mailbox{}, fmt.Errorf("create mailbox %q: %w", name, err)
 	}
 	return mb, nil
 }
@@ -205,11 +228,11 @@ func (c *Client) RenameMailbox(ctx context.Context, acct Account, id LabelID, ne
 	}
 	mb, err := p.RenameMailbox(ctx, provider.MailboxRef{ID: id, Path: string(id)}, newName)
 	if err != nil {
-		return Mailbox{}, err
+		return Mailbox{}, fmt.Errorf("rename mailbox %q to %q: %w", id, newName, err)
 	}
 	mb.Account = acct.ID
 	if err := c.store.UpsertMailboxes(ctx, []Mailbox{mb}); err != nil {
-		return Mailbox{}, err
+		return Mailbox{}, fmt.Errorf("rename mailbox %q to %q: %w", id, newName, err)
 	}
 	if mb.ID != id {
 		_ = c.store.DeleteMailbox(ctx, acct.ID, id)
@@ -233,7 +256,7 @@ func (c *Client) DeleteMailbox(ctx context.Context, acct Account, id LabelID) er
 		return err
 	}
 	if err := p.DeleteMailbox(ctx, provider.MailboxRef{ID: id, Path: string(id)}); err != nil {
-		return err
+		return fmt.Errorf("delete mailbox %q: %w", id, err)
 	}
 	return c.store.DeleteMailbox(ctx, acct.ID, id)
 }
@@ -314,6 +337,9 @@ func (c *Client) ThreadMessagesWithBodies(ctx context.Context, acct Account, thr
 	if err != nil {
 		return nil, err
 	}
+	// Best-effort: surface the error only when nothing loaded. A partial load
+	// (n>0 with err) still cached some bodies, so render what we got rather than
+	// failing the whole thread open.
 	if n, err := c.eng.LoadBodies(ctx, p, acct.ID, ids); err != nil && n == 0 {
 		return nil, err
 	}
@@ -389,15 +415,21 @@ func (c *Client) PruneBodies(ctx context.Context, acct AccountID, policy BodyRet
 	return c.store.PruneBodies(ctx, acct, policy, time.Now())
 }
 
+// Bounds for PreloadMailboxBodies' opportunistic prewarm.
+const (
+	defaultPreloadBodies = 20
+	maxPreloadBodies     = 100
+)
+
 // PreloadMailboxBodies fetches and caches bodies for the newest messages in a
 // mailbox. It is intended for opportunistic UI prewarming after a list view has
 // rendered; already-loaded bodies are skipped.
 func (c *Client) PreloadMailboxBodies(ctx context.Context, acct Account, mailbox LabelID, limit int) (int, error) {
 	if limit <= 0 {
-		limit = 20
+		limit = defaultPreloadBodies
 	}
-	if limit > 100 {
-		limit = 100
+	if limit > maxPreloadBodies {
+		limit = maxPreloadBodies
 	}
 	msgs, err := c.store.MailboxMessages(ctx, acct.ID, mailbox, limit)
 	if err != nil {
@@ -476,22 +508,15 @@ func (c *Client) Send(ctx context.Context, acct Account, out Outgoing) (sent boo
 // op id, so CancelSend can recall it within the window; the background outbox
 // loop delivers it once the hold elapses.
 func (c *Client) SendHeld(ctx context.Context, acct Account, out Outgoing, hold time.Duration) (int64, error) {
+	if hold <= 0 { // no hold window: identical to Send (build → enqueue → drain)
+		_, err := c.Send(ctx, acct, out)
+		return 0, err
+	}
 	if out.From.Addr == "" {
 		out.From = Address{Addr: acct.Email}
 	}
 	raw, err := mime.Build(out, time.Now(), genMessageID(acct.Email))
 	if err != nil {
-		return 0, err
-	}
-	if hold <= 0 {
-		if err := c.eng.EnqueueSend(ctx, acct.ID, model.RawMessage{Bytes: raw}, provider.SendOpts{Thread: out.Thread}); err != nil {
-			return 0, err
-		}
-		p, err := c.provider(ctx, acct)
-		if err != nil {
-			return 0, err
-		}
-		_, err = c.eng.DrainOutbox(ctx, p, acct.ID)
 		return 0, err
 	}
 	id, err := c.eng.EnqueueSendAt(ctx, acct.ID, model.RawMessage{Bytes: raw}, provider.SendOpts{Thread: out.Thread}, time.Now().Add(hold))
@@ -505,8 +530,18 @@ func (c *Client) SendHeld(ctx context.Context, acct Account, out Outgoing, hold 
 }
 
 // scheduleDrain fires a one-shot outbox drain for acct after the given delay.
+// The timer is tracked so Close can stop it; without that a held send's drain
+// would outlive the Client and rebuild a torn-down provider.
 func (c *Client) scheduleDrain(acct Account, after time.Duration) {
-	time.AfterFunc(after, func() {
+	var t *time.Timer
+	t = time.AfterFunc(after, func() {
+		c.mu.Lock()
+		_, live := c.drains[t]
+		delete(c.drains, t)
+		c.mu.Unlock()
+		if !live { // stopped by Close between firing and acquiring the lock
+			return
+		}
 		ctx := context.Background()
 		p, err := c.provider(ctx, acct)
 		if err != nil {
@@ -514,6 +549,15 @@ func (c *Client) scheduleDrain(acct Account, after time.Duration) {
 		}
 		_, _ = c.eng.DrainOutbox(ctx, p, acct.ID)
 	})
+
+	c.mu.Lock()
+	if c.closed { // already shutting down; don't schedule
+		c.mu.Unlock()
+		t.Stop()
+		return
+	}
+	c.drains[t] = struct{}{}
+	c.mu.Unlock()
 }
 
 // CancelSend recalls a held send by op id before its hold elapses. Returns false
@@ -521,9 +565,6 @@ func (c *Client) scheduleDrain(acct Account, after time.Duration) {
 func (c *Client) CancelSend(ctx context.Context, acct Account, opID int64) (bool, error) {
 	return c.eng.CancelSend(ctx, acct.ID, opID)
 }
-
-// InboxLabel is the label/mailbox treated as "the inbox" for Archive.
-const InboxLabel LabelID = "INBOX"
 
 // mutate applies a local optimistic change (fn) then flushes the outbox so the
 // provider mutation goes out immediately. The local change has already published
@@ -562,7 +603,7 @@ func (c *Client) Star(ctx context.Context, acct Account, ids []MessageID, on boo
 // the Done-today metric.
 func (c *Client) Archive(ctx context.Context, acct Account, ids []MessageID) error {
 	_ = c.store.RecordDone(ctx, acct.ID, ids, time.Now())
-	if archive, ok := c.archiveMailbox(ctx, acct.ID); ok {
+	if archive, ok := c.mailboxByRole(ctx, acct.ID, RoleArchive); ok {
 		return c.mutate(ctx, acct, func(id AccountID) error {
 			return c.eng.Move(ctx, id, ids, archive)
 		})
@@ -572,13 +613,15 @@ func (c *Client) Archive(ctx context.Context, acct Account, ids []MessageID) err
 	})
 }
 
-func (c *Client) archiveMailbox(ctx context.Context, acct AccountID) (LabelID, bool) {
+// mailboxByRole returns the id of the account's mailbox carrying the given
+// system role, if one exists.
+func (c *Client) mailboxByRole(ctx context.Context, acct AccountID, role Role) (LabelID, bool) {
 	mailboxes, err := c.store.Mailboxes(ctx, acct)
 	if err != nil {
 		return "", false
 	}
 	for _, mailbox := range mailboxes {
-		if mailbox.Role == RoleArchive {
+		if mailbox.Role == role {
 			return mailbox.ID, true
 		}
 	}
@@ -618,25 +661,12 @@ func (c *Client) Move(ctx context.Context, acct Account, ids []MessageID, dst La
 // store under the Trash folder); only without one does it fall back to a hard
 // \Deleted + expunge.
 func (c *Client) Delete(ctx context.Context, acct Account, ids []MessageID) error {
-	if trash, ok := c.trashMailbox(ctx, acct.ID); ok {
+	if trash, ok := c.mailboxByRole(ctx, acct.ID, RoleTrash); ok {
 		return c.mutate(ctx, acct, func(id AccountID) error {
 			return c.eng.Move(ctx, id, ids, trash)
 		})
 	}
 	return c.mutate(ctx, acct, func(id AccountID) error { return c.eng.Delete(ctx, id, ids) })
-}
-
-func (c *Client) trashMailbox(ctx context.Context, acct AccountID) (LabelID, bool) {
-	mailboxes, err := c.store.Mailboxes(ctx, acct)
-	if err != nil {
-		return "", false
-	}
-	for _, mailbox := range mailboxes {
-		if mailbox.Role == RoleTrash {
-			return mailbox.ID, true
-		}
-	}
-	return "", false
 }
 
 // ── drafts (local, autosaved) ───────────────────────────────────
@@ -751,7 +781,7 @@ func (c *Client) pullMailbox(ctx context.Context, p provider.Provider, acct Acco
 		return 0, err
 	}
 	total := len(fwd)
-	for i := 0; i < pages; i++ {
+	for range pages {
 		n, done, berr := c.eng.BackfillPage(ctx, p, acct, ref, 100)
 		if berr != nil {
 			return total, berr
@@ -800,9 +830,15 @@ func (c *Client) StopSync(acct AccountID) {
 	}
 }
 
-// Close stops all sync loops, closes providers, and closes the store.
+// Close stops all sync loops, cancels pending held-send drains, closes
+// providers, and closes the store. It is idempotent.
 func (c *Client) Close() error {
 	c.mu.Lock()
+	c.closed = true
+	for t := range c.drains {
+		t.Stop()
+		delete(c.drains, t)
+	}
 	for id, cancel := range c.daemons {
 		cancel()
 		delete(c.daemons, id)
@@ -826,7 +862,7 @@ func Reply(orig Message, self Address, replyAll bool) Outgoing {
 		Thread:    orig.Thread,
 		InReplyTo: orig.RFCMessageID,
 		// References = original chain + the message being replied to.
-		References: append(append([]string{}, orig.References...), orig.RFCMessageID),
+		References: append(slices.Clone(orig.References), orig.RFCMessageID),
 	}
 	out.To = orig.From
 	if replyAll {
