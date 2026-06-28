@@ -25,9 +25,10 @@ ON CONFLICT(account, mailbox) DO UPDATE SET backfill = NULL, backfill_done = 1;
 -- name: ClearCursor :exec
 DELETE FROM sync_state WHERE account = ? AND mailbox = ?;
 
--- name: EnqueueOp :exec
+-- name: EnqueueOp :one
 INSERT INTO op_log (account, op, payload, next_at, created)
-VALUES (?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?)
+RETURNING id;
 
 -- name: ReadyOps :many
 SELECT id, account, op, payload, attempts, next_at, created
@@ -41,3 +42,6 @@ UPDATE op_log SET attempts = attempts + 1, next_at = ? WHERE id = ?;
 
 -- name: DeleteOp :exec
 DELETE FROM op_log WHERE id = ?;
+
+-- name: CancelSendOp :execrows
+DELETE FROM op_log WHERE account = ? AND id = ? AND op = 'send';

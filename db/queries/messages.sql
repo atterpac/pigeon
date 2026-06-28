@@ -17,7 +17,7 @@ ON CONFLICT(account, id) DO UPDATE SET
     category = excluded.category,
     flags = excluded.flags,
     has_attachments = excluded.has_attachments,
-    body_loaded = excluded.body_loaded,
+    body_loaded = MAX(messages.body_loaded, excluded.body_loaded),
     rfc_message_id = excluded.rfc_message_id,
     refs = excluded.refs;
 
@@ -43,7 +43,7 @@ SELECT flags FROM messages WHERE account = ? AND id = ?;
 UPDATE messages SET flags = ? WHERE account = ? AND id = ?;
 
 -- name: SetBodyLoaded :exec
-UPDATE messages SET body_loaded = ? WHERE account = ? AND id = ?;
+UPDATE messages SET body_loaded = ?, body_cached_at = ? WHERE account = ? AND id = ?;
 
 -- name: DeleteMessage :exec
 DELETE FROM messages WHERE account = ? AND id = ?;
