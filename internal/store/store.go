@@ -74,13 +74,16 @@ func (s *Store) Queries() *gen.Queries { return s.q }
 func (s *Store) Tx(ctx context.Context, fn func(*gen.Queries) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("begin tx: %w", err)
 	}
 	if err := fn(s.q.WithTx(tx)); err != nil {
 		tx.Rollback()
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
 }
 
 // DB exposes the underlying handle for raw queries (e.g. FTS search).

@@ -11,7 +11,7 @@ import (
 // Op is a queued outbound operation awaiting delivery to the provider.
 type Op struct {
 	ID       int64
-	Op       string
+	Kind     string
 	Payload  []byte
 	Attempts int
 }
@@ -39,7 +39,7 @@ func (s *Store) CancelSend(ctx context.Context, account model.AccountID, id int6
 // ReadyOps returns operations due at or before now, oldest first.
 func (s *Store) ReadyOps(ctx context.Context, account model.AccountID, now time.Time, limit int) ([]Op, error) {
 	if limit <= 0 {
-		limit = 50
+		limit = defaultListLimit
 	}
 	rows, err := s.q.ReadyOps(ctx, gen.ReadyOpsParams{
 		Account: string(account), NextAt: now.Unix(), Limit: int64(limit),
@@ -49,7 +49,7 @@ func (s *Store) ReadyOps(ctx context.Context, account model.AccountID, now time.
 	}
 	out := make([]Op, len(rows))
 	for i, r := range rows {
-		out[i] = Op{ID: r.ID, Op: r.Op, Payload: []byte(r.Payload), Attempts: int(r.Attempts)}
+		out[i] = Op{ID: r.ID, Kind: r.Op, Payload: []byte(r.Payload), Attempts: int(r.Attempts)}
 	}
 	return out, nil
 }

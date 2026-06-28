@@ -97,7 +97,7 @@ func ftsPrefixQuery(terms []string) string {
 // Search runs a structured local query (operators + full text), newest first.
 func (s *Store) Search(ctx context.Context, account model.AccountID, query string, limit int) ([]model.Message, error) {
 	if limit <= 0 {
-		limit = 50
+		limit = defaultListLimit
 	}
 	sq := parseSearch(query)
 
@@ -132,15 +132,15 @@ func (s *Store) Search(ctx context.Context, account model.AccountID, query strin
 	}
 	if sq.hasUnread != nil {
 		if *sq.hasUnread {
-			wheres = append(wheres, "m.flags NOT LIKE ?")
+			wheres = append(wheres, "instr(m.flags, ?) = 0")
 		} else {
-			wheres = append(wheres, "m.flags LIKE ?")
+			wheres = append(wheres, "instr(m.flags, ?) > 0")
 		}
-		args = append(args, "%\\Seen%")
+		args = append(args, string(model.FlagSeen))
 	}
 	if sq.hasStar != nil && *sq.hasStar {
-		wheres = append(wheres, "m.flags LIKE ?")
-		args = append(args, "%\\Flagged%")
+		wheres = append(wheres, "instr(m.flags, ?) > 0")
+		args = append(args, string(model.FlagFlagged))
 	}
 	if sq.hasAttach != nil && *sq.hasAttach {
 		wheres = append(wheres, "m.has_attachments = 1")

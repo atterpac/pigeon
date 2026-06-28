@@ -15,6 +15,9 @@ import (
 // snippetLen caps the stored preview text.
 const snippetLen = 240
 
+// defaultPruneLimit caps how many bodies a single PruneBodies pass evicts.
+const defaultPruneLimit = 500
+
 // SaveBody persists a message's decoded parts (inline + attachments), marks it
 // body-loaded, updates its snippet, and re-indexes FTS with the body text so it
 // becomes searchable. Replaces any previously stored parts.
@@ -65,18 +68,8 @@ func (s *Store) SaveBody(ctx context.Context, account model.AccountID, id model.
 		return err
 	}
 
-	// Re-index FTS with the body now available.
-	var rowid int64
-	if err := tx.QueryRowContext(ctx, `SELECT rowid FROM messages WHERE account = ? AND id = ?`,
-		string(account), string(id)).Scan(&rowid); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM messages_fts WHERE rowid = ?`, rowid); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO messages_fts(rowid, subject, sender, body) VALUES (?, ?, ?, ?)`,
-		rowid, msg.Subject, sender(msg), text); err != nil {
+	// Re-index FTS now that the body text is available.
+	if err := indexFTS(ctx, tx, msg, text); err != nil {
 		return err
 	}
 
@@ -128,7 +121,7 @@ func (s *Store) TouchMessagesOpened(ctx context.Context, account model.AccountID
 	if at.IsZero() {
 		at = time.Now()
 	}
-	placeholders, args := messageIDArgs(account, ids)
+	placeholders, args := idArgs(account, ids)
 	args = append([]any{at.Unix()}, args...)
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE messages SET last_opened_at = MAX(last_opened_at, ?) WHERE account = ? AND id IN (`+placeholders+`)`,
@@ -148,7 +141,7 @@ func (s *Store) PruneBodies(ctx context.Context, account model.AccountID, policy
 	}
 	limit := policy.Limit
 	if limit <= 0 {
-		limit = 500
+		limit = defaultPruneLimit
 	}
 
 	selected := make([]bodyPruneCandidate, 0, limit)
@@ -212,7 +205,7 @@ func (s *Store) PruneBodies(ctx context.Context, account model.AccountID, policy
 			return BodyPruneResult{}, err
 		}
 		msg := model.Message{ID: c.id, Account: account, Subject: c.subject, From: decodeAddrs(c.fromJSON)}
-		if err := indexFTS(ctx, tx, msg); err != nil {
+		if err := indexFTS(ctx, tx, msg, ""); err != nil {
 			return BodyPruneResult{}, err
 		}
 		result.Messages++
@@ -284,15 +277,4 @@ func (s *Store) cachedBodyBytes(ctx context.Context, account model.AccountID) (i
 		string(account),
 	).Scan(&bytes)
 	return bytes, err
-}
-
-func messageIDArgs(account model.AccountID, ids []model.MessageID) (string, []any) {
-	placeholders := make([]string, len(ids))
-	args := make([]any, 0, len(ids)+1)
-	args = append(args, string(account))
-	for i, id := range ids {
-		placeholders[i] = "?"
-		args = append(args, string(id))
-	}
-	return strings.Join(placeholders, ","), args
 }

@@ -2,9 +2,7 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/atterpac/email/internal/model"
@@ -17,7 +15,7 @@ import (
 // without a second round of queries.
 func (s *Store) ThreadListItems(ctx context.Context, account model.AccountID, limit int) ([]model.ThreadListItem, error) {
 	if limit <= 0 {
-		limit = 50
+		limit = defaultListLimit
 	}
 	threads, err := s.q.ListThreads(ctx, gen.ListThreadsParams{Account: string(account), Limit: int64(limit)})
 	if err != nil {
@@ -28,22 +26,20 @@ func (s *Store) ThreadListItems(ctx context.Context, account model.AccountID, li
 	}
 
 	// Fetch all messages across these threads in one query.
-	ids := make([]any, 0, len(threads)+1)
-	ids = append(ids, string(account))
-	ph := make([]string, len(threads))
+	threadIDs := make([]string, len(threads))
 	for i, t := range threads {
-		ph[i] = "?"
-		ids = append(ids, t.ID)
+		threadIDs[i] = t.ID
 	}
+	placeholders, args := idArgs(account, threadIDs)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT m.id, m.thread, m.subject, m.from_json, m.date, m.snippet, m.category, m.flags, m.has_attachments
 		FROM messages m
-		WHERE m.account = ? AND m.thread IN (`+strings.Join(ph, ",")+`)
+		WHERE m.account = ? AND m.thread IN (`+placeholders+`)
 		  AND EXISTS (
 		    SELECT 1 FROM message_labels ml
 		    WHERE ml.account = m.account AND ml.message = m.id AND ml.label = 'INBOX'
 		  )
-		ORDER BY date ASC`, ids...)
+		ORDER BY date ASC`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -94,18 +90,15 @@ func (s *Store) ThreadListItems(ctx context.Context, account model.AccountID, li
 	}
 
 	// Labels per thread (union), via one batched query over all message ids.
-	var allIDs []model.Message
+	var msgIDs []model.MessageID
 	for _, a := range byThread {
 		for _, r := range a.rows {
-			allIDs = append(allIDs, model.Message{ID: r.id})
+			msgIDs = append(msgIDs, r.id)
 		}
 	}
-	if err := s.loadLabels(ctx, account, allIDs); err != nil {
+	labelByMsg, err := s.labelsByMessage(ctx, account, msgIDs)
+	if err != nil {
 		return nil, err
-	}
-	labelByMsg := map[model.MessageID][]model.LabelID{}
-	for _, m := range allIDs {
-		labelByMsg[m.ID] = m.Labels
 	}
 
 	out := make([]model.ThreadListItem, 0, len(threads))
@@ -137,17 +130,4 @@ func (s *Store) ThreadListItems(ctx context.Context, account model.AccountID, li
 		out = append(out, item)
 	}
 	return out, nil
-}
-
-func decodeAddrs(jsonStr string) []model.Address {
-	var a []model.Address
-	_ = json.Unmarshal([]byte(jsonStr), &a)
-	return a
-}
-
-func firstAddr(a []model.Address) model.Address {
-	if len(a) > 0 {
-		return a[0]
-	}
-	return model.Address{}
 }

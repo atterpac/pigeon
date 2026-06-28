@@ -3,9 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/atterpac/email/internal/model"
@@ -14,6 +12,9 @@ import (
 
 // ErrNotFound is returned when a requested row does not exist.
 var ErrNotFound = errors.New("store: not found")
+
+// defaultListLimit caps list/search reads when the caller passes limit <= 0.
+const defaultListLimit = 50
 
 // ListAccounts returns all configured accounts.
 func (s *Store) ListAccounts(ctx context.Context) ([]model.Account, error) {
@@ -51,7 +52,7 @@ func (s *Store) Mailboxes(ctx context.Context, account model.AccountID) ([]model
 // Threads lists conversations for an account, newest activity first.
 func (s *Store) Threads(ctx context.Context, account model.AccountID, limit int) ([]model.Thread, error) {
 	if limit <= 0 {
-		limit = 50
+		limit = defaultListLimit
 	}
 	rows, err := s.q.ListThreads(ctx, gen.ListThreadsParams{Account: string(account), Limit: int64(limit)})
 	if err != nil {
@@ -83,7 +84,7 @@ func (s *Store) ThreadMessages(ctx context.Context, account model.AccountID, thr
 // MailboxMessages returns messages carrying a label/mailbox, newest first.
 func (s *Store) MailboxMessages(ctx context.Context, account model.AccountID, mailbox model.LabelID, limit int) ([]model.Message, error) {
 	if limit <= 0 {
-		limit = 50
+		limit = defaultListLimit
 	}
 	rows, err := s.q.ListMailboxMessages(ctx, gen.ListMailboxMessagesParams{
 		Account: string(account), Label: string(mailbox), Limit: int64(limit),
@@ -131,69 +132,46 @@ func (s *Store) Parts(ctx context.Context, account model.AccountID, id model.Mes
 	return out, nil
 }
 
-func mapMessages(rows []gen.Message) []model.Message {
-	out := make([]model.Message, len(rows))
-	for i, r := range rows {
-		out[i] = rowToMessage(r)
-	}
-	return out
-}
-
-func rowToMessage(r gen.Message) model.Message {
-	m := model.Message{
-		ID: model.MessageID(r.ID), Thread: model.ThreadID(r.Thread), Account: model.AccountID(r.Account),
-		Subject: r.Subject, Snippet: r.Snippet, Date: time.Unix(r.Date, 0),
-		Category: model.Category(r.Category), Flags: splitFlags(r.Flags), HasAttachments: r.HasAttachments != 0, BodyLoaded: r.BodyLoaded != 0,
-		BodyCachedAt: unixTime(r.BodyCachedAt), LastOpenedAt: unixTime(r.LastOpenedAt),
-		RFCMessageID: r.RfcMessageID, References: strings.Fields(r.Refs),
-	}
-	_ = json.Unmarshal([]byte(r.FromJson), &m.From)
-	_ = json.Unmarshal([]byte(r.ToJson), &m.To)
-	_ = json.Unmarshal([]byte(r.CcJson), &m.Cc)
-	_ = json.Unmarshal([]byte(r.BccJson), &m.Bcc)
-	return m
-}
-
-func unixTime(sec int64) time.Time {
-	if sec == 0 {
-		return time.Time{}
-	}
-	return time.Unix(sec, 0)
-}
-
-// loadLabels populates Labels for the given messages with a single query.
+// loadLabels populates Labels on each message in place with a single query.
 func (s *Store) loadLabels(ctx context.Context, account model.AccountID, msgs []model.Message) error {
 	if len(msgs) == 0 {
 		return nil
 	}
-	placeholders := make([]string, len(msgs))
-	args := make([]any, 0, len(msgs)+1)
-	args = append(args, string(account))
+	ids := make([]model.MessageID, len(msgs))
 	for i, m := range msgs {
-		placeholders[i] = "?"
-		args = append(args, string(m.ID))
+		ids[i] = m.ID
 	}
-	q := `SELECT message, label FROM message_labels WHERE account = ? AND message IN (` +
-		strings.Join(placeholders, ",") + `)`
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	byID, err := s.labelsByMessage(ctx, account, ids)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	for i := range msgs {
+		msgs[i].Labels = byID[msgs[i].ID]
+	}
+	return nil
+}
 
-	byID := map[string][]model.LabelID{}
+// labelsByMessage returns the labels attached to each message id, batched into
+// one query.
+func (s *Store) labelsByMessage(ctx context.Context, account model.AccountID, ids []model.MessageID) (map[model.MessageID][]model.LabelID, error) {
+	byID := map[model.MessageID][]model.LabelID{}
+	if len(ids) == 0 {
+		return byID, nil
+	}
+	placeholders, args := idArgs(account, ids)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT message, label FROM message_labels WHERE account = ? AND message IN (`+placeholders+`)`,
+		args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 	for rows.Next() {
 		var msg, label string
 		if err := rows.Scan(&msg, &label); err != nil {
-			return err
+			return nil, err
 		}
-		byID[msg] = append(byID[msg], model.LabelID(label))
+		byID[model.MessageID(msg)] = append(byID[model.MessageID(msg)], model.LabelID(label))
 	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for i := range msgs {
-		msgs[i].Labels = byID[string(msgs[i].ID)]
-	}
-	return nil
+	return byID, rows.Err()
 }

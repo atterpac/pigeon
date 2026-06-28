@@ -12,9 +12,12 @@ import (
 // ReclassifyMailbox recalculates categories for recent messages in a mailbox.
 // Loaded body parts are included as text hints; unloaded messages use envelope
 // metadata only. It returns the number of rows whose category changed.
+// defaultReclassifyLimit caps how many recent messages a reclassify pass scans.
+const defaultReclassifyLimit = 100
+
 func (s *Store) ReclassifyMailbox(ctx context.Context, account model.AccountID, mailbox model.LabelID, limit int) (int, error) {
 	if limit <= 0 {
-		limit = 100
+		limit = defaultReclassifyLimit
 	}
 	msgs, err := s.MailboxMessages(ctx, account, mailbox, limit)
 	if err != nil {

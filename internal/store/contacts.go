@@ -43,9 +43,12 @@ func harvestContacts(ctx context.Context, q *gen.Queries, account model.AccountI
 // SearchContacts returns address-book entries matching query (a prefix/substring
 // of the address or display name), ranked by frequency then recency. An empty
 // query returns the most-used contacts.
+// defaultContactLimit caps contact autocomplete results.
+const defaultContactLimit = 10
+
 func (s *Store) SearchContacts(ctx context.Context, account model.AccountID, query string, limit int) ([]model.Contact, error) {
 	if limit <= 0 {
-		limit = 10
+		limit = defaultContactLimit
 	}
 	pattern := "%" + likeEscape(strings.ToLower(strings.TrimSpace(query))) + "%"
 	rows, err := s.q.SearchContacts(ctx, gen.SearchContactsParams{
