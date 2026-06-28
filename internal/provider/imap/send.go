@@ -3,7 +3,9 @@ package imap
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
+	"net"
 	"net/mail"
 
 	"github.com/emersion/go-imap/v2"
@@ -15,7 +17,7 @@ import (
 
 // Send delivers a raw message over SMTP (STARTTLS) authenticated with the same
 // SASL mechanism as IMAP. Gmail auto-files SMTP-sent mail into Sent.
-func (p *Provider) Send(_ context.Context, raw model.RawMessage, _ provider.SendOpts) (model.MessageID, error) {
+func (p *Provider) Send(ctx context.Context, raw model.RawMessage, _ provider.SendOpts) (model.MessageID, error) {
 	from, rcpts, msgID, err := envelope(raw.Bytes)
 	if err != nil {
 		return "", err
@@ -31,9 +33,17 @@ func (p *Provider) Send(_ context.Context, raw model.RawMessage, _ provider.Send
 	}
 	addr := fmt.Sprintf("%s:%d", host, port)
 
-	c, err := smtp.DialStartTLS(addr, nil)
+	// Dial via a ctx-aware dialer so a hung connect is bounded by the caller's
+	// deadline, then STARTTLS. ServerName must be set explicitly here (unlike
+	// smtp.DialStartTLS, which derives it from addr) or cert verification fails.
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return "", fmt.Errorf("smtp dial %s: %w", addr, err)
+	}
+	c, err := smtp.NewClientStartTLS(conn, &tls.Config{ServerName: host})
+	if err != nil {
+		conn.Close()
+		return "", fmt.Errorf("smtp starttls %s: %w", addr, err)
 	}
 	defer c.Close()
 
@@ -56,7 +66,10 @@ func (p *Provider) SaveDraft(ctx context.Context, raw model.RawMessage) (model.M
 	if err != nil {
 		return "", err
 	}
-	_, _, msgID, _ := envelope(raw.Bytes)
+	_, _, msgID, perr := envelope(raw.Bytes)
+	if perr != nil {
+		return "", perr
+	}
 	opts := &imap.AppendOptions{Flags: []imap.Flag{imap.FlagDraft}}
 	ac := c.Append("Drafts", int64(len(raw.Bytes)), opts)
 	if _, err := ac.Write(raw.Bytes); err != nil {

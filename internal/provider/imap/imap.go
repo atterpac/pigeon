@@ -3,12 +3,13 @@
 // send. Authentication is a plain password / app-password (PLAIN SASL).
 //
 // This file covers the read path: connect/auth, list mailboxes, backfill and
-// incremental envelope sync, and on-demand body fetch. Write operations and
-// send are stubbed pending later milestones.
+// incremental envelope sync, and on-demand body fetch. Writes live in mutate.go,
+// send/draft in send.go, and IDLE watching in watch.go.
 package imap
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -44,8 +45,8 @@ type Config struct {
 type Provider struct {
 	cfg Config
 
-	opMu     sync.Mutex
-	mu       sync.Mutex
+	opMu     sync.Mutex // serializes whole operations (one in flight at a time)
+	connMu   sync.Mutex // guards c/selected during dial/reset/close
 	c        *imapclient.Client
 	selected string // currently selected mailbox path
 }
@@ -63,7 +64,7 @@ type cursor struct {
 }
 
 func encodeCursor(c cursor) *provider.Cursor {
-	b, _ := json.Marshal(c)
+	b, _ := json.Marshal(c) // cannot fail: cursor is a fixed struct of marshalable fields
 	return &provider.Cursor{Bytes: b}
 }
 
@@ -78,18 +79,23 @@ func decodeCursor(c *provider.Cursor) (cursor, bool) {
 	return out, true
 }
 
-// conn returns a connected, authenticated client, dialing if needed.
+// conn returns a connected, authenticated client, dialing if needed. ctx bounds
+// the TCP connect and TLS handshake; it does not cancel the subsequent auth.
 func (p *Provider) conn(ctx context.Context) (*imapclient.Client, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.connMu.Lock()
+	defer p.connMu.Unlock()
 	if p.c != nil {
 		return p.c, nil
 	}
 	addr := fmt.Sprintf("%s:%d", p.cfg.Host, p.cfg.Port)
-	c, err := imapclient.DialTLS(addr, nil)
+	// Replicate imapclient.DialTLS but via a ctx-aware dialer so a hung connect
+	// is bounded by the caller's deadline. ServerName is inferred from addr.
+	dialer := &tls.Dialer{Config: &tls.Config{NextProtos: []string{"imap"}}}
+	netConn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("imap dial %s: %w", addr, err)
 	}
+	c := imapclient.New(netConn, nil)
 	saslClient, err := p.saslClient()
 	if err != nil {
 		c.Close()
@@ -114,8 +120,8 @@ func (p *Provider) saslClient() (sasl.Client, error) {
 
 // reset drops the connection so the next call reconnects (used on error).
 func (p *Provider) reset() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.connMu.Lock()
+	defer p.connMu.Unlock()
 	if p.c != nil {
 		p.c.Close()
 		p.c = nil
@@ -123,6 +129,7 @@ func (p *Provider) reset() {
 	}
 }
 
+// ListMailboxes lists selectable mailboxes with message/unread counts and roles.
 func (p *Provider) ListMailboxes(ctx context.Context) ([]model.Mailbox, error) {
 	p.opMu.Lock()
 	defer p.opMu.Unlock()
@@ -165,6 +172,9 @@ func (p *Provider) ListMailboxes(ctx context.Context) ([]model.Mailbox, error) {
 	return out, nil
 }
 
+// Sync performs an incremental forward sync from cur. With CONDSTORE it returns
+// every message whose MODSEQ advanced (new + flag/label changes); without it,
+// only newly arrived UIDs. A nil/stale cursor just re-establishes the position.
 func (p *Provider) Sync(ctx context.Context, mb provider.MailboxRef, cur *provider.Cursor) (provider.Changes, *provider.Cursor, error) {
 	p.opMu.Lock()
 	defer p.opMu.Unlock()
@@ -181,7 +191,12 @@ func (p *Provider) Sync(ctx context.Context, mb provider.MailboxRef, cur *provid
 	}
 	p.selected = mb.Path
 
-	newest := sel.UIDNext - 1
+	// UIDNext is 1-based; guard the empty-mailbox case (UIDNext can be 1 or 0)
+	// so newest doesn't underflow to a huge UID.
+	var newest imap.UID
+	if sel.UIDNext > 1 {
+		newest = sel.UIDNext - 1
+	}
 	prev, ok := decodeCursor(cur)
 
 	// First sync, or UIDVALIDITY rotated: establish the position without
@@ -194,6 +209,21 @@ func (p *Provider) Sync(ctx context.Context, mb provider.MailboxRef, cur *provid
 
 	ch := provider.Changes{}
 	maxUID := prev.LastUID
+	// collect fetches set and appends its envelopes to ch, tracking the high UID.
+	collect := func(set imap.UIDSet, changedSince uint64) error {
+		msgs, err := p.fetchEnvelopes(ctx, c, mb.Path, set, changedSince)
+		if err != nil {
+			p.reset()
+			return err
+		}
+		for _, m := range msgs {
+			ch.Upserted = append(ch.Upserted, toMessage(p.cfg.Account, mb, m))
+			if m.UID > maxUID {
+				maxUID = m.UID
+			}
+		}
+		return nil
+	}
 	switch {
 	case condstore && prev.ModSeq > 0:
 		// CONDSTORE: one CHANGEDSINCE fetch returns every message whose MODSEQ
@@ -201,31 +231,15 @@ func (p *Provider) Sync(ctx context.Context, mb provider.MailboxRef, cur *provid
 		// changes on existing mail are captured, not just new messages.
 		var set imap.UIDSet
 		set.AddRange(1, 0) // 1:*
-		msgs, err := p.fetchEnvelopes(ctx, c, mb.Path, set, prev.ModSeq)
-		if err != nil {
-			p.reset()
+		if err := collect(set, prev.ModSeq); err != nil {
 			return provider.Changes{}, nil, err
-		}
-		for _, m := range msgs {
-			ch.Upserted = append(ch.Upserted, toMessage(p.cfg.Account, mb, m))
-			if m.UID > maxUID {
-				maxUID = m.UID
-			}
 		}
 	case prev.LastUID < newest:
 		// No CONDSTORE: fall back to new UIDs only.
 		var set imap.UIDSet
 		set.AddRange(prev.LastUID+1, 0)
-		msgs, err := p.fetchEnvelopes(ctx, c, mb.Path, set, 0)
-		if err != nil {
-			p.reset()
+		if err := collect(set, 0); err != nil {
 			return provider.Changes{}, nil, err
-		}
-		for _, m := range msgs {
-			ch.Upserted = append(ch.Upserted, toMessage(p.cfg.Account, mb, m))
-			if m.UID > maxUID {
-				maxUID = m.UID
-			}
 		}
 	}
 	return ch, encodeCursor(cursor{
@@ -252,8 +266,12 @@ func (p *Provider) Backfill(ctx context.Context, mb provider.MailboxRef, page *p
 	}
 	p.selected = mb.Path
 
-	// Determine the high UID to page down from.
-	hi := sel.UIDNext - 1 // newest
+	// Determine the high UID to page down from. UIDNext is 1-based; guard the
+	// empty/zero case so hi doesn't underflow to a huge UID.
+	var hi imap.UID
+	if sel.UIDNext > 1 {
+		hi = sel.UIDNext - 1 // newest
+	}
 	if prev, ok := decodeCursor(page); ok && prev.UIDValidity == sel.UIDValidity {
 		hi = prev.LastUID // here LastUID is "next UID to fetch (inclusive), paging down"
 	}
@@ -272,10 +290,7 @@ func (p *Provider) Backfill(ctx context.Context, mb provider.MailboxRef, page *p
 		p.reset()
 		return provider.Changes{}, nil, false, err
 	}
-	ch := provider.Changes{}
-	for _, m := range msgs {
-		ch.Upserted = append(ch.Upserted, toMessage(p.cfg.Account, mb, m))
-	}
+	ch := provider.Changes{Upserted: toMessages(p.cfg.Account, mb, msgs)}
 
 	done := lo <= 1
 	if done {
@@ -311,7 +326,9 @@ func (p *Provider) fetchEnvelopes(ctx context.Context, c *imapclient.Client, mbP
 		p.reset()
 		return nil, cerr
 	}
-	if _, serr := c2.Select(mbPath, nil).Wait(); serr != nil {
+	// Reselect with CondStore when the fetch carries CHANGEDSINCE, otherwise the
+	// server may reject the re-issued CHANGEDSINCE fetch on a non-CONDSTORE SELECT.
+	if _, serr := c2.Select(mbPath, &imap.SelectOptions{CondStore: changedSince > 0}).Wait(); serr != nil {
 		p.reset()
 		return nil, fmt.Errorf("imap reselect %q: %w", mbPath, serr)
 	}
@@ -344,11 +361,17 @@ func fetchEnvelopesOnce(c *imapclient.Client, set imap.UIDSet, changedSince uint
 }
 
 // isBodyStructureParseError detects the go-imap BODYSTRUCTURE parse failure so we
-// can retry without it rather than treat the page as permanently broken.
+// can retry without it rather than treat the page as permanently broken. go-imap
+// beta.8 surfaces this two ways depending on where parsing trips: a named
+// "body-type-*" production failure, or the lower-level "imapwire: expected '('"
+// desync that the NIL-subpart multiparts trigger.
 func isBodyStructureParseError(err error) bool {
-	return strings.Contains(err.Error(), "body-type-")
+	s := err.Error()
+	return strings.Contains(s, "body-type-") || strings.Contains(s, "imapwire: expected '('")
 }
 
+// FetchBodies returns the raw RFC 5322 bytes for ids, selecting mb first so the
+// UIDs resolve against the mailbox the messages actually live in.
 func (p *Provider) FetchBodies(ctx context.Context, mb provider.MailboxRef, ids []model.MessageID) ([]model.RawMessage, error) {
 	p.opMu.Lock()
 	defer p.opMu.Unlock()
@@ -371,22 +394,9 @@ func (p *Provider) FetchBodies(ctx context.Context, mb provider.MailboxRef, ids 
 		}
 		p.selected = mbPath
 	}
-	var set imap.UIDSet
-	idByUID := map[imap.UID]model.MessageID{}
-	for _, id := range ids {
-		if uid, ok := uidFromMessageID(id); ok {
-			set.AddNum(uid)
-			idByUID[uid] = id
-			continue
-		}
-		uids, err := p.searchMessageID(c, id)
-		if err != nil {
-			return nil, err
-		}
-		for _, uid := range uids {
-			set.AddNum(uid)
-			idByUID[uid] = id
-		}
+	set, idByUID, err := p.resolveUIDs(c, ids)
+	if err != nil {
+		return nil, err
 	}
 	if len(set) == 0 {
 		return nil, nil
@@ -432,19 +442,26 @@ func (p *Provider) searchMessageID(c *imapclient.Client, id model.MessageID) ([]
 	return data.AllUIDs(), nil
 }
 
+// Capabilities reports the optional features this provider supports.
 func (p *Provider) Capabilities() provider.Caps {
 	return provider.Caps{Idle: true, ServerSearch: true}
 }
 
+// Close logs out and tears down the shared connection if one is open.
 func (p *Provider) Close() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	// Take opMu so close can't tear the connection out from under an in-flight
+	// operation, then connMu to guard the connection fields themselves.
+	p.opMu.Lock()
+	defer p.opMu.Unlock()
+	p.connMu.Lock()
+	defer p.connMu.Unlock()
 	if p.c == nil {
 		return nil
 	}
 	err := p.c.Logout().Wait()
 	p.c.Close()
 	p.c = nil
+	p.selected = ""
 	return err
 }
 

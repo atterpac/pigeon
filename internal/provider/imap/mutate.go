@@ -19,24 +19,35 @@ import (
 // parsed directly. Without this, mutations get RFC ids, resolve to zero UIDs,
 // and silently no-op.
 func (p *Provider) resolveUIDSet(c *imapclient.Client, ids []model.MessageID) (imap.UIDSet, error) {
+	set, _, err := p.resolveUIDs(c, ids)
+	return set, err
+}
+
+// resolveUIDs is resolveUIDSet plus a UID→id map, letting callers attribute
+// fetch results back to the id that was requested (used by FetchBodies, where
+// one Message-ID may resolve to several UIDs).
+func (p *Provider) resolveUIDs(c *imapclient.Client, ids []model.MessageID) (imap.UIDSet, map[imap.UID]model.MessageID, error) {
 	var set imap.UIDSet
+	byUID := map[imap.UID]model.MessageID{}
 	for _, id := range ids {
 		if uid, ok := uidFromMessageID(id); ok {
 			set.AddNum(uid)
+			byUID[uid] = id
 			continue
 		}
 		uids, err := p.searchMessageID(c, id)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if len(uids) == 0 {
 			slog.Debug("imap: message-id not found in selected mailbox", "selected", p.selected, "id", id)
 		}
 		for _, uid := range uids {
 			set.AddNum(uid)
+			byUID[uid] = id
 		}
 	}
-	return set, nil
+	return set, byUID, nil
 }
 
 // ensureSelected selects INBOX for UID-based mutations. IMAP mutations act on
@@ -45,18 +56,29 @@ func (p *Provider) resolveUIDSet(c *imapclient.Client, ids []model.MessageID) (i
 // In this app the desktop acts on INBOX messages, so we explicitly (re)select
 // INBOX rather than trusting whatever was last selected (which would make a
 // COPY/MOVE/STORE silently target the wrong mailbox's UIDs).
-func (p *Provider) ensureSelected(ctx context.Context) error {
+func (p *Provider) ensureSelected(ctx context.Context) (*imapclient.Client, error) {
 	c, err := p.conn(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if p.selected == "INBOX" {
-		return nil
+		return c, nil
 	}
 	if _, err := c.Select("INBOX", nil).Wait(); err != nil {
-		return err
+		return nil, err
 	}
 	p.selected = "INBOX"
+	return c, nil
+}
+
+// expunge flags set \Deleted and removes those UIDs (the archive/delete tail).
+func expunge(c *imapclient.Client, set imap.UIDSet) error {
+	if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close(); err != nil {
+		return fmt.Errorf("imap store \\Deleted: %w", err)
+	}
+	if err := c.UIDExpunge(set).Close(); err != nil {
+		return fmt.Errorf("imap expunge: %w", err)
+	}
 	return nil
 }
 
@@ -65,10 +87,10 @@ func (p *Provider) ApplyFlags(ctx context.Context, ids []model.MessageID, add, r
 	p.opMu.Lock()
 	defer p.opMu.Unlock()
 
-	if err := p.ensureSelected(ctx); err != nil {
+	c, err := p.ensureSelected(ctx)
+	if err != nil {
 		return err
 	}
-	c, _ := p.conn(ctx)
 	set, err := p.resolveUIDSet(c, ids)
 	if err != nil {
 		return err
@@ -94,10 +116,10 @@ func (p *Provider) Move(ctx context.Context, ids []model.MessageID, dst provider
 	p.opMu.Lock()
 	defer p.opMu.Unlock()
 
-	if err := p.ensureSelected(ctx); err != nil {
+	c, err := p.ensureSelected(ctx)
+	if err != nil {
 		return err
 	}
-	c, _ := p.conn(ctx)
 	set, err := p.resolveUIDSet(c, ids)
 	if err != nil {
 		return err
@@ -119,10 +141,10 @@ func (p *Provider) Delete(ctx context.Context, ids []model.MessageID) error {
 	p.opMu.Lock()
 	defer p.opMu.Unlock()
 
-	if err := p.ensureSelected(ctx); err != nil {
+	c, err := p.ensureSelected(ctx)
+	if err != nil {
 		return err
 	}
-	c, _ := p.conn(ctx)
 	set, err := p.resolveUIDSet(c, ids)
 	if err != nil {
 		return err
@@ -130,13 +152,7 @@ func (p *Provider) Delete(ctx context.Context, ids []model.MessageID) error {
 	if len(set) == 0 {
 		return nil
 	}
-	if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close(); err != nil {
-		return fmt.Errorf("imap store \\Deleted: %w", err)
-	}
-	if err := c.UIDExpunge(set).Close(); err != nil {
-		return fmt.Errorf("imap expunge: %w", err)
-	}
-	return nil
+	return expunge(c, set)
 }
 
 // ApplyLabels maps the app's label model onto IMAP folders: IMAP has no labels,
@@ -149,10 +165,10 @@ func (p *Provider) ApplyLabels(ctx context.Context, ids []model.MessageID, add, 
 	p.opMu.Lock()
 	defer p.opMu.Unlock()
 
-	if err := p.ensureSelected(ctx); err != nil {
+	c, err := p.ensureSelected(ctx)
+	if err != nil {
 		return err
 	}
-	c, _ := p.conn(ctx)
 	set, err := p.resolveUIDSet(c, ids)
 	if err != nil {
 		return err
@@ -175,11 +191,8 @@ func (p *Provider) ApplyLabels(ctx context.Context, ids []model.MessageID, add, 
 		if string(lbl) != string(p.selected) {
 			continue
 		}
-		if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close(); err != nil {
-			return fmt.Errorf("imap store \\Deleted: %w", err)
-		}
-		if err := c.UIDExpunge(set).Close(); err != nil {
-			return fmt.Errorf("imap expunge: %w", err)
+		if err := expunge(c, set); err != nil {
+			return err
 		}
 	}
 	return nil

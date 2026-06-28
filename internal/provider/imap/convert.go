@@ -65,6 +65,11 @@ func toAddresses(in []imap.Address) []model.Address {
 	}
 	out := make([]model.Address, 0, len(in))
 	for _, a := range in {
+		// IMAP group syntax markers carry a nil mailbox or host; skip them rather
+		// than emit a malformed "@host" / "local@" address.
+		if a.Mailbox == "" || a.Host == "" {
+			continue
+		}
 		out = append(out, model.Address{
 			Name: a.Name,
 			Addr: a.Mailbox + "@" + a.Host,
@@ -98,6 +103,15 @@ func hasAttachment(bs imap.BodyStructure) bool {
 		return true
 	})
 	return found
+}
+
+// toMessages converts a batch of IMAP fetch buffers into domain envelopes.
+func toMessages(acct model.AccountID, mb provider.MailboxRef, msgs []*imapclient.FetchMessageBuffer) []model.Message {
+	out := make([]model.Message, 0, len(msgs))
+	for _, m := range msgs {
+		out = append(out, toMessage(acct, mb, m))
+	}
+	return out
 }
 
 // toMessage converts an IMAP fetch buffer into a domain Message envelope.

@@ -3,7 +3,7 @@ package imap
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -48,7 +48,7 @@ func (p *Provider) Search(ctx context.Context, mb provider.MailboxRef, query str
 		return nil, nil
 	}
 	// UIDs are ascending ≈ oldest→newest; keep the newest `limit` for the fetch.
-	sort.Slice(uids, func(i, j int) bool { return uids[i] < uids[j] })
+	slices.Sort(uids)
 	if limit > 0 && len(uids) > limit {
 		uids = uids[len(uids)-limit:]
 	}
@@ -61,11 +61,8 @@ func (p *Provider) Search(ctx context.Context, mb provider.MailboxRef, query str
 	if err != nil {
 		return nil, err
 	}
-	out := make([]model.Message, 0, len(msgs))
-	for _, m := range msgs {
-		out = append(out, toMessage(p.cfg.Account, mb, m))
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Date.After(out[j].Date) })
+	out := toMessages(p.cfg.Account, mb, msgs)
+	slices.SortFunc(out, func(a, b model.Message) int { return b.Date.Compare(a.Date) })
 	return out, nil
 }
 
