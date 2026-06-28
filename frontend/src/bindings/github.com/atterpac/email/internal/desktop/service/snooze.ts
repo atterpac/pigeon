@@ -12,30 +12,30 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as email$0 from "../../internal/email/models.js";
+import * as email$0 from "../../email/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as model$0 from "../../internal/model/models.js";
+import * as model$0 from "../../model/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as time$0 from "../../../../../time/models.js";
+import * as time$0 from "../../../../../../time/models.js";
 
 export function DoneToday(acct: email$0.AccountID): $CancellablePromise<number> {
-    return $Call.ByID(311847611, acct);
+    return $Call.ByID(922938387, acct);
 }
 
 export function Snooze(acct: email$0.Account, ids: email$0.MessageID[], until: time$0.Time): $CancellablePromise<void> {
-    return $Call.ByID(2138142344, acct, ids, until);
+    return $Call.ByID(2452166320, acct, ids, until);
 }
 
 export function Snoozed(acct: email$0.AccountID): $CancellablePromise<email$0.Snoozed[]> {
-    return $Call.ByID(2342401412, acct).then(($result: any) => {
+    return $Call.ByID(3937333180, acct).then(($result: any) => {
         return $$createType1($result);
     });
 }
 
 export function Unsnooze(acct: email$0.Account, ids: email$0.MessageID[]): $CancellablePromise<void> {
-    return $Call.ByID(3898383707, acct, ids);
+    return $Call.ByID(1495040083, acct, ids);
 }
 
 // Private type creation functions

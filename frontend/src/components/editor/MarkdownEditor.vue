@@ -2,7 +2,7 @@
 // Self-contained markdown editor: textarea + line gutter + terminal caret +
 // INSERT/NORMAL vim modes + format helpers + preview.
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { renderMarkdown } from '../../mail/format'
+import { type InlineImage, inlineCidImages, renderMarkdown } from '../../mail/format'
 import { PhPaperPlaneTilt, PhTextB, PhTextItalic, PhCode, PhLink, PhPaperclip } from '@phosphor-icons/vue'
 
 type EditorMode = 'INSERT' | 'NORMAL'
@@ -17,12 +17,16 @@ const props = withDefaults(defineProps<{
   expanded?: boolean
   resetKey?: string
   vim?: boolean
+  // cid → inline image, so the preview can resolve embedded ![](cid:…) refs.
+  inlineImages?: Record<string, InlineImage>
 }>(), { variant: 'reply', placeholder: 'Write a message...', status: '', vim: true })
 
 const emit = defineEmits<{
   (e: 'update:body', value: string): void
   (e: 'send'): void
   (e: 'attach'): void
+  (e: 'attach-inline', payload: { file: File; cid: string }): void
+  (e: 'attach-files', files: File[]): void
   (e: 'discard'): void
 }>()
 
@@ -37,7 +41,64 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 let charCanvas: HTMLCanvasElement | undefined
 
 const lineNumbers = computed(() => Array.from({ length: Math.max(1, props.body.split('\n').length) }, (_, index) => index + 1))
-const renderedPreview = computed(() => renderMarkdown(props.body))
+const renderedPreview = computed(() => inlineCidImages(renderMarkdown(props.body), props.inlineImages))
+
+// Paste an image from the clipboard → embed it inline: insert ![name](cid:id)
+// markdown at the cursor and hand the bytes up to be stored as an inline part.
+function handlePaste(event: ClipboardEvent) {
+  const items = event.clipboardData?.items
+  if (!items) return
+  const images = Array.from(items).filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+  if (!images.length) return
+  event.preventDefault()
+  for (const item of images) {
+    const file = item.getAsFile()
+    if (!file) continue
+    embedInlineImage(file)
+  }
+}
+
+// Drag-and-drop: images embed inline (like paste); other files attach normally.
+const dragging = ref(false)
+function handleDragOver(event: DragEvent) {
+  if (!event.dataTransfer?.types.includes('Files')) return
+  event.preventDefault()
+  dragging.value = true
+}
+function handleDragLeave(event: DragEvent) {
+  // Ignore leaves into child nodes; only clear when leaving the drop zone.
+  if (event.currentTarget instanceof Node && event.relatedTarget instanceof Node && (event.currentTarget as Node).contains(event.relatedTarget as Node)) return
+  dragging.value = false
+}
+function handleDrop(event: DragEvent) {
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  if (!files.length) return
+  event.preventDefault()
+  dragging.value = false
+  const others: File[] = []
+  for (const file of files) {
+    if (file.type.startsWith('image/')) embedInlineImage(file)
+    else others.push(file)
+  }
+  if (others.length) emit('attach-files', others)
+}
+function embedInlineImage(file: File) {
+  const cid = `img-${Date.now()}-${Math.round(Math.random() * 1e6)}`
+  insertAtCursor(`\n![${file.name || 'image'}](cid:${cid})\n`)
+  emit('attach-inline', { file, cid })
+}
+function insertAtCursor(text: string) {
+  const textarea = textareaRef.value
+  const start = textarea?.selectionStart ?? props.body.length
+  const end = textarea?.selectionEnd ?? props.body.length
+  body.value = props.body.slice(0, start) + text + props.body.slice(end)
+  nextTick(() => {
+    const pos = start + text.length
+    textarea?.setSelectionRange(pos, pos)
+    textarea?.focus()
+    updateCaret()
+  })
+}
 
 watch(() => props.body, () => nextTick(updateCaret))
 watch(() => props.resetKey, () => { preview.value = false })
@@ -123,10 +184,11 @@ function onBlur() { editorFocused.value = false }
 
 <template>
   <div class="md-editor" :class="[variant, { expanded, 'no-vim': !vim }]">
-    <div class="editor-shell">
+    <div class="editor-shell" :class="{ dragging }" @dragover="handleDragOver" @dragleave="handleDragLeave" @drop="handleDrop">
+      <div v-if="dragging" class="drop-hint">Drop images to embed · files to attach</div>
       <button class="preview-toggle" :class="{ active: preview }" type="button" @click="preview = !preview">{{ preview ? 'Edit' : 'Preview' }}</button>
       <ol class="line-gutter" aria-hidden="true"><li v-for="line in lineNumbers" :key="line" :class="{ current: editorFocused && line === currentLine }">{{ line }}</li></ol>
-      <textarea v-if="!preview" ref="textareaRef" v-model="body" class="editor-input" spellcheck="true" :placeholder="placeholder" wrap="off" @keydown="handleEditorKeydown" @focus="onFocus" @blur="onBlur" @click="updateCaret" @keyup="updateCaret" @select="updateCaret" @scroll="updateCaret" @input="updateCaret" />
+      <textarea v-if="!preview" ref="textareaRef" v-model="body" class="editor-input" spellcheck="true" :placeholder="placeholder" wrap="off" @keydown="handleEditorKeydown" @paste="handlePaste" @focus="onFocus" @blur="onBlur" @click="updateCaret" @keyup="updateCaret" @select="updateCaret" @scroll="updateCaret" @input="updateCaret" />
       <span v-if="vim && !preview && editorFocused" class="terminal-caret" :style="caretStyle" />
       <div v-if="preview" class="editor-preview" v-html="renderedPreview" />
     </div>

@@ -17,8 +17,9 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .setup-shell { width: 100vw; min-height: 100vh; display: grid; place-items: center; padding: 28px; background: var(--bg) }
 .setup-panel { width: min(100%, 960px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 440px); gap: 44px; align-items: start; padding: 34px; border: 1px solid var(--border-2); border-radius: 8px; background: var(--surface) }
 .setup-panel.compact { display: block; width: min(100%, 420px) }
-.setup-brand { display: inline-flex; align-items: center; gap: 12px }
-.setup-beak { width: 40px; height: 40px; display: block; filter: drop-shadow(0 2px 6px rgba(0,0,0,.35)) }
+.setup-brand { display: inline-flex; align-items: center; gap: 14px }
+.setup-logo { width: 54px; height: 62px; display: block; object-fit: contain }
+.setup-beak { width: 40px; height: 40px; display: block }
 .setup-wordmark { color: var(--head); font: 700 22px "JetBrains Mono", ui-monospace, monospace; letter-spacing: -0.01em }
 .setup-copy h1, .setup-panel.compact h1 { margin: 26px 0 12px; color: var(--head); font-size: 32px; line-height: 1.1 }
 .setup-copy p, .setup-panel.compact p { margin: 0; color: var(--text-dim); font-size: 15px; line-height: 1.6 }
@@ -45,15 +46,18 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .sandbox-link:hover { color: var(--accent) }
 
 /* ── Shell frame ──────────────────────────────────────────────────────── */
-.mail-shell { width: 100vw; height: 100vh; display: grid; grid-template-rows: 1fr auto; overflow: hidden; background: var(--bg) }
-.topbar { position: relative; z-index: 3; display: none; grid-template-columns: minmax(248px, 1fr) minmax(360px, 620px) minmax(248px, 1fr); align-items: center; gap: 20px; padding: 0 18px; background: var(--surface); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-1) }
+.mail-shell { --traffic-light-gutter: 24px; position: relative; width: 100vw; height: 100vh; display: grid; grid-template-rows: 1fr auto; overflow: hidden; padding-top: var(--traffic-light-gutter); background: var(--bg) }
+.topbar { position: absolute; inset: 0 0 auto; z-index: 10; height: var(--traffic-light-gutter); display: flex; align-items: center; justify-content: flex-end; padding: 0 14px 0 86px; background: var(--bg) }
 .brand-group { display: flex; align-items: center; gap: 10px; min-width: 0 }
 .brand-mark { flex: none; display: inline-grid; place-items: center; height: 28px; padding: 0 10px; border-radius: 7px; background: var(--accent-grad); color: var(--accent-ink); box-shadow: var(--top-hi), var(--shadow-1); font: 700 12px "JetBrains Mono", ui-monospace, monospace }
 .brand-path { min-width: 0; display: flex; align-items: baseline; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 13px "JetBrains Mono", ui-monospace, monospace }
 .brand-path .bp-sep { color: var(--text-mut) }
 .brand-path .bp-profile { color: var(--text-dim) }
 .brand-path .bp-view { color: var(--accent); overflow: hidden; text-overflow: ellipsis }
-.search-affordance { height: 36px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border-2); border-radius: 9px; font-size: 13px }
+.titlebar-path { min-width: 0; display: flex; align-items: baseline; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-dim); font: 12px "JetBrains Mono", ui-monospace, monospace }
+.titlebar-wordmark { height: 28px; display: flex; align-items: center; justify-content: center; color: var(--head); font: 700 17px "Hanken Grotesk", Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 0 }
+.titlebar-icon { display: grid; place-items: center; width: 30px; height: 28px; padding: 0; color: var(--text-dim); background: transparent; border: 1px solid transparent; border-radius: 8px; transform: translateY(6px) }
+.titlebar-icon:hover { color: var(--accent); background: var(--surface-2); border-color: var(--border-2) }
 .topbar-actions { display: flex; align-items: center; gap: 10px; justify-self: end }
 .topbar-actions .primary-action { min-width: 118px }
 .sandbox-button { height: 36px; color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border-2); border-radius: 9px; padding: 0 14px; font-size: 13px }
@@ -74,6 +78,8 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .modeline.mode-compose .ml-mode { background: var(--green) }
 .modeline.mode-search .ml-mode { background: var(--orange) }
 .modeline.mode-thread .ml-mode { background: var(--purple) }
+.modeline.mode-visual .ml-mode { background: var(--star, var(--orange)) }
+.modeline.mode-snoozed .ml-mode { background: var(--purple) }
 .modeline .ml-focus { align-self: stretch; display: flex; align-items: center; padding: 0 10px; color: var(--accent); background: var(--accent-soft); border-right: 1px solid var(--border); text-transform: uppercase }
 .modeline .ml-buffer { padding: 0 12px; color: var(--text); border-right: 1px solid var(--border) }
 .modeline .ml-hints { padding: 0 12px; color: var(--text-mut); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
@@ -82,7 +88,6 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .modeline .ml-pct { padding: 0 12px; background: var(--surface-2); color: var(--text-dim); align-self: stretch; display: flex; align-items: center }
 
 /* ── Relative-number gutter ───────────────────────────────────────────── */
-.list-pane.relno-on .email-row { grid-template-columns: 26px 20px minmax(0, 1fr) }
 .relno { align-self: center; text-align: right; color: var(--text-mut); font: 11px/1 "JetBrains Mono", ui-monospace, monospace }
 .relno.cur { text-align: left; color: var(--accent); font-weight: 700 }
 
@@ -113,10 +118,41 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .set-section { margin: 18px 0 8px; color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase }
 .set-pack { margin: 12px 0 8px; color: var(--text-dim); font: 600 12px "Hanken Grotesk", Inter, sans-serif }
 .set-note { margin: 6px 0 0; color: var(--text-mut); font-size: 12.5px; line-height: 1.5 }
+.set-signature { width: 100%; margin-top: 8px; padding: 9px 11px; border: 1px solid var(--border-2); border-radius: 8px; background: var(--surface-2); color: var(--text); font: 12.5px "JetBrains Mono", ui-monospace, monospace; line-height: 1.5; resize: vertical; box-sizing: border-box }
+.set-signature:focus { outline: none; border-color: var(--accent-line) }
+.signature-manager { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 12px; margin-top: 10px; min-height: 210px }
+.signature-list { display: flex; flex-direction: column; gap: 5px; min-width: 0 }
+.signature-list-item, .signature-add { border: 1px solid var(--border-2); border-radius: 9px; background: transparent; color: var(--text-dim); text-align: left; padding: 9px 10px }
+.signature-list-item { display: grid; gap: 3px }
+.signature-list-item b { color: var(--text); font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.signature-list-item small { color: var(--text-mut); font-size: 11px }
+.signature-list-item.active { border-color: var(--accent-line); background: var(--accent-soft) }
+.signature-add { color: var(--accent); font: 12px "JetBrains Mono", ui-monospace, monospace; text-align: center }
+.signature-editor, .signature-empty { min-width: 0; border: 1px solid var(--border-2); border-radius: 11px; background: var(--surface-2); padding: 11px }
+.signature-editor-row { display: flex; align-items: center; gap: 8px }
+.signature-name { flex: 1; min-width: 0; border: 1px solid var(--border-2); border-radius: 8px; background: var(--bg); color: var(--text); padding: 8px 10px; outline: none }
+.signature-name:focus { border-color: var(--accent-line) }
+.signature-rich-preview { display: grid; gap: 6px; margin-top: 10px; padding: 10px; border: 1px solid var(--border-2); border-radius: 9px; background: #fff; color: #20242a }
+.signature-rich-preview > span { color: #6b7280; font: 11px "JetBrains Mono", ui-monospace, monospace; text-transform: uppercase }
+.signature-paste-target { min-height: 150px; padding: 10px; border: 1px dashed #d1d5db; border-radius: 8px; outline: none; overflow: auto }
+.signature-paste-target:empty::before { content: "Paste a finished signature here"; color: #8b95a5; font: 13px "Hanken Grotesk", Inter, sans-serif }
+.signature-paste-target:focus { border-color: #86a5ff; box-shadow: 0 0 0 2px rgba(134,165,255,.18) }
+.signature-paste-target img { max-width: 100%; height: auto }
+.signature-editor-actions { display: flex; justify-content: flex-end; margin-top: 8px }
+.signature-empty { display: grid; place-items: center }
 .notif-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px }
 .set-btn { padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border-2); background: var(--surface-2); color: var(--text); font-size: 12.5px; cursor: pointer; transition: background var(--ease), border-color var(--ease) }
 .set-btn:hover { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent) }
 .set-btn.active { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); font-weight: 600 }
+.quiet-times { display: flex; gap: 8px }
+.quiet-times input { border: 1px solid var(--border-2); border-radius: 8px; background: var(--surface-2); color: var(--text); padding: 6px 8px; font: 12px "JetBrains Mono", ui-monospace, monospace }
+.quiet-times input:focus { outline: none; border-color: var(--accent-line) }
+.muted-add { display: flex; gap: 8px; margin-top: 12px }
+.muted-add input { flex: 1; min-width: 0; border: 1px solid var(--border-2); border-radius: 8px; background: var(--surface-2); color: var(--text); padding: 7px 10px; font: 12px "JetBrains Mono", ui-monospace, monospace }
+.muted-add input:focus { outline: none; border-color: var(--accent-line) }
+.muted-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px }
+.muted-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border: 1px solid var(--border-2); border-radius: 999px; background: var(--surface-2); color: var(--text-dim); font: 11.5px "JetBrains Mono", ui-monospace, monospace; cursor: pointer }
+.muted-chip:hover { border-color: var(--accent-line); color: var(--accent) }
 .notif-log { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font: 11.5px "JetBrains Mono", ui-monospace, monospace; color: var(--text-dim) }
 .notif-log li { padding: 4px 8px; border-radius: 6px; background: var(--surface-2); word-break: break-all }
 .set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border) }
@@ -186,7 +222,10 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .body-shell.rail .navlabel, .body-shell.rail .acctcol, .body-shell.rail .cmdpath, .body-shell.rail .chev,
 .body-shell.rail .grouphead, .body-shell.rail .dot, .body-shell.rail .composebtn kbd { display: none }
 .body-shell.rail .account { grid-template-columns: 1fr; justify-items: center; padding: 6px }
-.body-shell.rail .account-command-trigger { min-height: 34px }
+.body-shell.rail .account-command-trigger { min-height: 40px; border-color: transparent; background: transparent }
+.body-shell.rail .sidebar-brand { justify-content: center; padding: 6px 0 12px }
+.body-shell.rail .sidebar-brand-logo { width: 30px; height: 34px }
+.body-shell.rail .sidebar-account-bottom .account-menu { left: 0; right: auto; width: 220px }
 .body-shell.rail .navitem { justify-content: center; padding: 9px 0 }
 .body-shell.rail .composebtn { padding: 9px 0 }
 
@@ -196,7 +235,10 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .body-shell.nav-collapsed .navlabel, .body-shell.nav-collapsed .acctcol, .body-shell.nav-collapsed .cmdpath, .body-shell.nav-collapsed .chev,
 .body-shell.nav-collapsed .grouphead, .body-shell.nav-collapsed .dot, .body-shell.nav-collapsed .composebtn kbd { display: none }
 .body-shell.nav-collapsed .account { grid-template-columns: 1fr; justify-items: center; padding: 6px }
-.body-shell.nav-collapsed .account-command-trigger { min-height: 34px }
+.body-shell.nav-collapsed .account-command-trigger { min-height: 40px; border-color: transparent; background: transparent }
+.body-shell.nav-collapsed .sidebar-brand { justify-content: center; padding: 6px 0 12px }
+.body-shell.nav-collapsed .sidebar-brand-logo { width: 30px; height: 34px }
+.body-shell.nav-collapsed .sidebar-account-bottom .account-menu { left: 0; right: auto; width: 220px }
 .body-shell.nav-collapsed .navitem { justify-content: center; padding: 9px 0 }
 .body-shell.nav-collapsed .composebtn { padding: 9px 0 }
 .body-shell.nav-collapsed .account-command-trigger:hover,
@@ -238,16 +280,17 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .md-editor.no-vim .editor-status b { opacity: .45 }
 
 /* ── Compact density ──────────────────────────────────────────────────── */
-[data-density="compact"] .email-row { min-height: 0; padding: 7px 16px }
-[data-density="compact"] .snippet-line { display: none }
 [data-density="compact"] .navitem { padding: 6px 12px }
-[data-density="compact"] .thread-messages article { padding: 14px 0 }
+[data-density="compact"] .thread-messages article { padding-top: 14px; padding-bottom: 14px }
 
 /* ── Sidebar (flat) ───────────────────────────────────────────────────── */
 .sidebar { position: relative; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border-2); border-radius: 16px; padding: 16px 12px; font-size: 13.5px; overflow: visible; box-shadow: var(--shadow-2) }
+.sidebar-brand { display: flex; align-items: center; gap: 11px; min-height: 46px; padding: 0 10px 14px }
+.sidebar-brand-logo { flex: none; width: 32px; height: 36px; display: block; object-fit: contain }
 .account { display: grid; grid-template-columns: 34px 1fr 12px; gap: 10px; align-items: center; width: 100%; padding: 9px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--border-2); color: var(--text); text-align: left }
-.account-command-trigger { grid-template-columns: auto minmax(0, 1fr) 12px; gap: 0; padding: 10px 11px; border-color: var(--border); background: transparent; font-family: "JetBrains Mono", ui-monospace, monospace }
+.account-command-trigger { grid-template-columns: 28px minmax(0, 1fr) 12px; gap: 10px; padding: 8px 10px; border-color: var(--border); background: transparent; font-family: "JetBrains Mono", ui-monospace, monospace }
 .account-command-trigger:hover { border-color: var(--accent-line); background: var(--accent-soft) }
+.account-initial { width: 28px; height: 28px; display: grid; place-items: center; justify-self: center; border-radius: 9px; background: var(--accent-soft); color: var(--accent); font: 700 12px "Hanken Grotesk", Inter, ui-sans-serif, system-ui, sans-serif }
 .cmdprompt { color: var(--accent); font-weight: 700 }
 .cmdpath { min-width: 0; display: flex; align-items: baseline; overflow: hidden; white-space: nowrap }
 .cmdpath b { overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis }
@@ -278,8 +321,10 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 
 /* Account switcher */
 .account-wrap { position: relative }
+.sidebar-account-bottom { margin-top: auto; padding-top: 12px }
 .menu-scrim { position: fixed; inset: 0; z-index: 40 }
 .account-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 41; padding: 6px; border: 1px solid var(--border-2); border-radius: 12px; background: var(--surface); box-shadow: 0 20px 50px rgba(0, 0, 0, .5) }
+.sidebar-account-bottom .account-menu { top: auto; bottom: calc(100% + 6px) }
 .menu-head { margin: 4px 8px 6px; color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase }
 .menu-row { display: flex; align-items: center; gap: 4px }
 .menu-item { flex: 1; min-width: 0; display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 10px; padding: 7px 8px; border: 0; border-radius: 9px; background: transparent; color: var(--text); text-align: left }
@@ -341,6 +386,11 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .list-header strong { color: var(--text) }
 .searchbtn { color: var(--text-mut); background: transparent; border: 1px solid var(--border-2); border-radius: 7px; padding: 4px 10px }
 .searchbtn:hover { color: var(--accent); border-color: var(--accent-line) }
+.searchbtn:disabled { opacity: .6; cursor: default }
+.list-header .header-actions { display: inline-flex; align-items: center; gap: 6px }
+.searchbtn.server-search { font: 11px "JetBrains Mono", ui-monospace, monospace }
+.searchbtn .spin { animation: ml-spin 0.8s linear infinite }
+@keyframes ml-spin { to { transform: rotate(360deg) } }
 .search-header { padding: 14px 14px 10px; border-bottom: 1px solid var(--border) }
 .search-header label { display: flex; align-items: center; gap: 10px; background: var(--surface-2); border: 1px solid var(--accent); border-radius: 10px; padding: 10px 13px }
 .search-header input { flex: 1; color: var(--text); background: transparent; border: 0; outline: 0 }
@@ -352,32 +402,23 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .category-tabs button.active span { background: var(--accent); color: var(--accent-ink) }
 .mobile-mailboxes { display: none }
 .scroll-region { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 2px; padding: 6px }
+/* Rows/labels must keep their natural height and let the region scroll. Their
+   inner text is overflow:hidden, which zeroes each item's min-content size, so
+   WebKit (notably macOS WKWebView) would otherwise flex-shrink them into an
+   overlapping pile once the list overflows. */
+.scroll-region > * { flex-shrink: 0 }
 .section-label { margin: 8px 6px 2px; color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace; letter-spacing: .09em; text-transform: uppercase }
 .empty-state { margin: 0; padding: 40px 18px; color: var(--text-mut); font: 13px "JetBrains Mono", ui-monospace, monospace }
-.email-row { position: relative; display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 9px; align-items: start; margin: 0; padding: 11px 12px; border-radius: 10px; color: var(--text-dim); cursor: pointer; transition: background var(--ease-fast), box-shadow var(--ease-fast) }
-.email-row:hover { background: var(--surface-2) }
-.email-row.selected { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line) }
-.row-main { min-width: 0; display: grid; gap: 2px }
-.row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px }
-.row-top strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-size: 13.5px; font-weight: 400 }
-.email-row.unread .row-top strong { color: var(--head); font-weight: 600 }
-.row-top time { flex: none; color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospace }
-.subject { display: flex; align-items: center; gap: 8px; overflow: hidden; color: var(--text-dim); font-size: 13.5px }
-.subject > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.email-row.unread .subject { color: var(--head); font-weight: 600 }
-.subject em { flex: none; font-style: normal; font: 10px "JetBrains Mono", ui-monospace, monospace; border-radius: 6px; padding: 2px 7px }
-.snippet-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-mut); font-size: 12.5px }
-.star { display: grid; place-items: center; width: 20px; height: 20px; border: 0; background: transparent; color: var(--text-mut); margin-top: 1px }
-.star svg { display: block }
-.star.active { color: var(--star) }
-
 /* ── Reading pane ─────────────────────────────────────────────────────── */
 .reading-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; margin-left: -12px; border: 1px solid var(--border-2); border-left: 0; border-radius: 0 16px 16px 0; background: var(--read-bg); box-shadow: var(--shadow-2) }
-.reading-pane.focused { box-shadow: var(--shadow-2), inset 0 0 0 1px var(--accent-line) }
+.reading-pane.focused { box-shadow: var(--shadow-2) }
+.reading-pane.focused::after { content: ""; position: absolute; inset: 0; z-index: 6; pointer-events: none; border: 1px solid var(--accent-line); border-radius: 0 16px 16px 0 }
 .reading-empty { flex: 1; display: grid; place-items: center; color: var(--text-mut); font: 13px "JetBrains Mono", ui-monospace, monospace }
 .thread-header { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 28px; border-bottom: 1px solid var(--border) }
 .thread-title { min-width: 0 }
-.thread-path { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; color: var(--accent); font: 12px "JetBrains Mono", ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.thread-path { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; color: var(--accent); font: 12px "JetBrains Mono", ui-monospace, monospace; overflow: hidden; white-space: nowrap }
+.thread-path svg { flex: none; display: block }
+.thread-path span { min-width: 0; overflow: hidden; text-overflow: ellipsis }
 .thread-title h1 { margin: 0 0 6px; color: var(--head); font: 650 22px/1.2 "Hanken Grotesk", Inter, sans-serif; letter-spacing: -.012em }
 .thread-title p { margin: 0; color: var(--text-dim); font: 12px "JetBrains Mono", ui-monospace, monospace }
 .thread-title p b { color: var(--text); font-weight: 700 }
@@ -389,7 +430,7 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .thread-action kbd { color: var(--text-mut); font-size: 10px }
 .thread-action.primary kbd { color: color-mix(in oklab, var(--accent-ink) 70%, transparent) }
 .thread-messages { flex: 1; min-height: 0; overflow: auto; padding: 0 26px }
-.thread-messages article { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 14px; margin: 0 -10px; padding: 20px 10px; border-bottom: 1px solid var(--border); border-radius: 12px; outline: 0; cursor: pointer }
+.thread-messages article { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; margin: 0 -10px; padding: 20px 10px; border-bottom: 1px solid var(--border); border-radius: 12px; outline: 0; cursor: pointer }
 .thread-messages article:hover, .thread-messages article.focused, .thread-messages article:focus-visible { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line) }
 .avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--border-2); color: var(--text-dim); font: 11px "JetBrains Mono", ui-monospace, monospace }
 .thread-messages header { display: flex; gap: 10px; color: var(--text-mut); font-size: 12px }
@@ -441,6 +482,8 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .editor-shell::before { content: ""; position: absolute; top: 0; bottom: 0; left: 36px; width: 1px; background: var(--border-2); z-index: 1 }
 .md-editor.expanded .editor-shell { min-height: clamp(300px, 48vh, 560px) }
 .md-editor.compose .editor-shell { min-height: 300px; border: 0; border-radius: 0; background: var(--surface) }
+.editor-shell.dragging { outline: 2px dashed var(--accent); outline-offset: -4px }
+.drop-hint { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; background: color-mix(in oklab, var(--accent-soft) 80%, transparent); color: var(--accent); font: 12.5px "JetBrains Mono", ui-monospace, monospace; pointer-events: none }
 .line-gutter { position: absolute; inset: 0 auto 0 0; width: 36px; margin: 0; padding: 17px 0 0; list-style: none; color: var(--text-mut); text-align: center; font: 13px/22px "JetBrains Mono", ui-monospace, monospace }
 .line-gutter li { height: 22px; line-height: 22px }
 .md-editor.compose .line-gutter { padding-top: 20px; line-height: 25.375px }
@@ -452,6 +495,7 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 .editor-preview .preview-line { min-height: 22px; line-height: 22px; white-space: pre-wrap }
 .md-editor.compose .editor-preview .preview-line { min-height: 25.375px; line-height: 25.375px }
 .editor-preview code { background: var(--surface-2); border-radius: 4px; padding: 2px 4px }
+.editor-preview img { display: block; max-width: 100%; height: auto; margin: 6px 0; border-radius: 6px; border: 1px solid var(--border) }
 .terminal-caret { position: absolute; left: 0; top: 0; width: 8px; background: var(--accent-line); animation: blink 1s steps(2, start) infinite; pointer-events: none }
 .preview-toggle { position: absolute; top: 8px; right: 10px; z-index: 2; color: var(--text-dim); background: var(--surface); border: 1px solid var(--border-2); border-radius: 7px; padding: 6px 10px; font: 11px "JetBrains Mono", ui-monospace, monospace }
 .preview-toggle:hover, .preview-toggle.active { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft) }
@@ -464,10 +508,9 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 @keyframes blink { 50% { opacity: 0 } }
 
 @media (max-width: 1000px) {
-  .mail-shell { grid-template-rows: auto 1fr auto }
-  .topbar { grid-template-columns: 1fr; gap: 10px; padding: 10px 12px }
-  .topbar-actions { justify-self: stretch; overflow: auto; padding-bottom: 2px }
-  .search-affordance { justify-content: flex-start; padding: 0 12px }
+  .mail-shell { grid-template-rows: 1fr auto }
+  .topbar { padding: 0 10px 0 84px }
+  .titlebar-path { display: none }
   .body-shell, .body-shell.nav-collapsed { grid-template-columns: 1fr; gap: 0; margin: 0; border: 0; border-radius: 0 }
   .sidebar { display: none }
   .body-shell.mobile-list .list-pane { display: flex; border: 0; border-radius: 0; box-shadow: none }
@@ -483,7 +526,7 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
   .thread-title h1 { font-size: 19px }
   .thread-actions { justify-content: flex-start }
   .thread-messages { padding: 0 16px }
-  .thread-messages article { grid-template-columns: 30px minmax(0, 1fr); gap: 10px }
+  .thread-messages article { grid-template-columns: 30px minmax(0, 1fr); gap: 8px }
   .thread-messages header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px }
   .thread-messages header span { grid-column: 1 / -1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
   .reply-panel { padding: 12px 16px }

@@ -13,11 +13,12 @@ import Modeline from './Modeline.vue'
 import ComposeModal from '../overlays/ComposeModal.vue'
 import Cheatsheet from '../overlays/Cheatsheet.vue'
 import CommandMenu from './CommandMenu.vue'
+import UndoToast from './UndoToast.vue'
+import ShellToast from './ShellToast.vue'
 import SettingsModal from '../overlays/SettingsModal.vue'
-import { PhMagnifyingGlass, PhKeyboard, PhGearSix, PhFlask, PhNotePencil } from '@phosphor-icons/vue'
+import { PhGearSix } from '@phosphor-icons/vue'
 
 defineProps<{ devTools?: boolean }>()
-const emit = defineEmits<{ (e: 'open-sandbox'): void }>()
 const s = useMailShell()
 const settings = useSettings()
 const cheatsheetOpen = ref(false)
@@ -46,23 +47,11 @@ function showList() { mobilePane.value = 'list'; s.focusList() }
 <template>
   <main class="mail-shell">
     <header class="topbar">
-      <div class="brand-group">
-        <span class="brand-mark">chirp</span>
-        <span class="brand-path" :title="accountName">
-          <span class="bp-sep">~/</span><span class="bp-profile">{{ profileSlug }}</span><span class="bp-sep">/</span><span class="bp-view">{{ viewSlug }}</span>
-        </span>
-      </div>
-      <button class="search-affordance" type="button" @click="s.openCommand('search')"><PhMagnifyingGlass :size="15" /> Search mail <kbd>⌘K</kbd></button>
-      <div class="topbar-actions">
-        <button class="sandbox-button" type="button" @click="cheatsheetOpen = true"><PhKeyboard :size="15" /> Keys</button>
-        <button class="sandbox-button" type="button" @click="settingsOpen = true"><PhGearSix :size="15" /> Settings</button>
-        <button v-if="devTools" class="sandbox-button dev-only" type="button" @click="emit('open-sandbox')"><PhFlask :size="15" /> Sandbox</button>
-        <button class="primary-action" type="button" @click="s.compose()"><PhNotePencil :size="15" /> Compose <kbd>c</kbd></button>
-      </div>
+      <button class="titlebar-icon" type="button" title="Settings" aria-label="Settings" @click="settingsOpen = true"><PhGearSix :size="15" /></button>
     </header>
 
     <div class="body-shell" :class="{ rail: settings.navLayout === 'rail', 'nav-collapsed': settings.navCollapsed, 'mobile-list': mobilePane === 'list', 'mobile-thread': mobilePane === 'thread' }">
-      <Sidebar @open-settings="settingsOpen = true" />
+      <Sidebar />
       <MessageList @open-thread="showThread" />
       <ReadingPane ref="readingPane" @back-to-list="showList" />
     </div>
@@ -71,6 +60,9 @@ function showList() { mobilePane.value = 'list'; s.focusList() }
     <ComposeModal v-if="s.composeOpen.value" />
     <Cheatsheet v-if="cheatsheetOpen" @close="cheatsheetOpen = false" />
     <SettingsModal v-if="settingsOpen" :dev-tools="devTools" @close="settingsOpen = false" />
+
+    <UndoToast />
+    <ShellToast />
 
     <div class="shell-foot">
       <CommandLine />

@@ -21,11 +21,11 @@ const pct = computed(() => {
 </script>
 
 <template>
-  <footer class="modeline" :class="`mode-${s.mode.value.toLowerCase()}`">
-    <span class="ml-mode">{{ s.mode.value }}</span>
+  <footer class="modeline" :class="`mode-${s.mode.value.toLowerCase()}`" aria-label="Status bar">
+    <span class="ml-mode">{{ s.mode.value }}<template v-if="s.visualMode.value"> · {{ s.selectedCount.value }} selected</template></span>
     <span class="ml-focus">{{ s.focusPane.value }}</span>
     <span class="ml-buffer">{{ buffer }}</span>
-    <span class="ml-hints">{{ s.status.value || s.statusHints.value }}</span>
+    <span class="ml-hints" role="status" aria-live="polite">{{ s.status.value || s.statusHints.value }}</span>
     <span class="ml-branch"> {{ s.account.value?.email || 'no account' }}</span>
     <span class="ml-pos">{{ position }}</span>
     <span class="ml-pct">{{ pct }}</span>

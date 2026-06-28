@@ -1,305 +1,237 @@
 <script setup lang="ts">
-// Sandbox: the REAL sidebar markup (styled by global shell.css/tokens.css so it
-// matches the live app + theme), with folder edit-view styles layered on top.
 import { computed, ref } from 'vue'
 import {
-  PhArchiveBox,
-  PhBriefcase,
-  PhCaretDown,
   PhCheck,
+  PhCopy,
   PhDotsThree,
-  PhEyeSlash,
-  PhFolderSimple,
-  PhGearSix,
-  PhNotePencil,
-  PhPencilSimple,
+  PhFloppyDisk,
   PhPlus,
-  PhReceipt,
-  PhRocket,
-  PhSmiley,
+  PhSignature,
   PhStar,
-  PhTag,
-  PhTarget,
   PhTrash,
-  PhTray,
-  PhX,
 } from '@phosphor-icons/vue'
 
 defineOptions({ name: 'SandboxScratchpad' })
 
-type Variant = 'inline' | 'expand' | 'popover' | 'sheet' | 'menu' | 'swap'
+type Variant = 'split' | 'cards' | 'inline' | 'preview' | 'compact' | 'command'
+type Signature = { id: string; name: string; body: string; html: string; default?: boolean }
+
 const variants: Array<{ id: Variant; label: string; blurb: string }> = [
-  { id: 'inline', label: 'Inline', blurb: 'Row morphs in place: icon button + name field + confirm' },
-  { id: 'expand', label: 'Expand', blurb: 'Row stays, an edit card unfolds beneath it' },
-  { id: 'popover', label: 'Popover', blurb: 'Floating editor anchored to the row' },
-  { id: 'sheet', label: 'Sheet', blurb: 'Panel slides in over the sidebar' },
-  { id: 'menu', label: 'Menu', blurb: 'Context menu of actions; rename/icon are entries' },
-  { id: 'swap', label: 'Swap', blurb: 'Whole row becomes a compact toolbar' },
-]
-const variant = ref<Variant>('inline')
-
-// ---- mock nav data (mirrors the real sidebar) ----
-type Folder = { id: string; name: string; icon: any; unread?: number; role?: boolean }
-const folders = ref<Folder[]>([
-  { id: 'inbox', name: 'Inbox', icon: PhTray, unread: 18, role: true },
-  { id: 'archive', name: 'Archive', icon: PhArchiveBox, role: true },
-  { id: 'q3', name: 'Q3 Launch', icon: PhRocket, unread: 4 },
-  { id: 'clients', name: 'Clients', icon: PhBriefcase },
-  { id: 'receipts', name: 'Receipts', icon: PhReceipt, unread: 2 },
-])
-const labels = [
-  { id: 'launch', name: 'Launch', swatch: 'var(--accent)' },
-  { id: 'review', name: 'Review', swatch: 'var(--green)' },
-  { id: 'vendor', name: 'Vendor', swatch: 'var(--red)' },
+  { id: 'split', label: 'Split', blurb: 'Saved signatures on the left, focused editor on the right' },
+  { id: 'cards', label: 'Cards', blurb: 'Each signature is its own editable card with inline controls' },
+  { id: 'inline', label: 'Inline', blurb: 'Dense table-like rows for quick renaming and defaulting' },
+  { id: 'preview', label: 'Preview', blurb: 'Editor paired with a compose-style rendered preview' },
+  { id: 'compact', label: 'Compact', blurb: 'One-select workflow for a tighter settings panel' },
+  { id: 'command', label: 'Command', blurb: 'Keyboard-forward picker with actions beside the editor' },
 ]
 
-const activeId = ref('q3')
-const editingId = ref('')
-const editing = computed(() => folders.value.find((f) => f.id === editingId.value) ?? null)
-const draftName = ref('')
-
-const iconChoices = [PhFolderSimple, PhRocket, PhTarget, PhStar, PhTag, PhBriefcase, PhReceipt, PhArchiveBox]
-const pickedIcon = ref<any>(PhRocket)
-const iconOpen = ref(false)
-
+const variant = ref<Variant>('split')
+const selectedId = ref('personal')
 const toast = ref('')
-function fireToast(t: string) { toast.value = t; setTimeout(() => (toast.value = ''), 2200) }
-function startEdit(f: Folder) { activeId.value = f.id; editingId.value = f.id; draftName.value = f.name; pickedIcon.value = f.icon; iconOpen.value = false }
-function save() { if (editing.value) { editing.value.name = draftName.value.trim() || editing.value.name; editing.value.icon = pickedIcon.value } fireToast('Folder updated'); editingId.value = ''; iconOpen.value = false }
-function cancel() { editingId.value = ''; iconOpen.value = false }
-function choose(ic: any) { pickedIcon.value = ic; iconOpen.value = false }
-function isEditing(f: Folder) { return editingId.value === f.id }
+const signatures = ref<Signature[]>([
+  { id: 'personal', name: 'Personal', body: 'Michael Capretta\natterpac\nmichael@example.com', html: '<strong>Michael Capretta</strong><br>atterpac<br><a href="mailto:michael@example.com">michael@example.com</a>', default: true },
+  { id: 'work', name: 'Work', body: 'Michael Capretta\nProduct Engineering\nBells & Steel', html: '<strong>Michael Capretta</strong><br><span style="color:#667085">Product Engineering</span><br>Bells & Steel' },
+  { id: 'short', name: 'Short', body: 'Michael', html: 'Michael' },
+])
 
-const blurb = computed(() => variants.find((v) => v.id === variant.value)?.blurb ?? '')
+const selected = computed(() => signatures.value.find((signature) => signature.id === selectedId.value) ?? signatures.value[0])
+const blurb = computed(() => variants.find((item) => item.id === variant.value)?.blurb ?? '')
+
+function showToast(message: string) {
+  toast.value = message
+  setTimeout(() => (toast.value = ''), 1800)
+}
+
+function addSignature() {
+  const id = `sig-${Date.now()}`
+  signatures.value.push({ id, name: `Signature ${signatures.value.length + 1}`, body: '', html: '' })
+  selectedId.value = id
+  showToast('Signature added')
+}
+
+function duplicateSignature(signature = selected.value) {
+  if (!signature) return
+  const id = `sig-${Date.now()}`
+  signatures.value.push({ id, name: `${signature.name} copy`, body: signature.body, html: signature.html })
+  selectedId.value = id
+  showToast('Signature duplicated')
+}
+
+function removeSignature(id: string) {
+  const index = signatures.value.findIndex((signature) => signature.id === id)
+  signatures.value = signatures.value.filter((signature) => signature.id !== id)
+  if (!signatures.value.some((signature) => signature.default) && signatures.value[0]) signatures.value[0].default = true
+  if (selectedId.value === id) selectedId.value = signatures.value[Math.max(0, index - 1)]?.id ?? ''
+  showToast('Signature deleted')
+}
+
+function setDefault(id: string) {
+  for (const signature of signatures.value) signature.default = signature.id === id
+  showToast('Default updated')
+}
+
+function addLogo(signature = selected.value) {
+  if (!signature) return
+  signature.html += '<br><img src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22160%22 height=%2242%22 viewBox=%220 0 160 42%22%3E%3Crect width=%22160%22 height=%2242%22 rx=%228%22 fill=%22%2386a5ff%22/%3E%3Ctext x=%2218%22 y=%2227%22 font-family=%22Arial%22 font-size=%2218%22 font-weight=%22700%22 fill=%22%23151622%22%3EPigeon%3C/text%3E%3C/svg%3E" alt="Pigeon" style="max-width:160px;height:auto;display:block;margin-top:8px">'
+  showToast('Image inserted')
+}
 </script>
 
 <template>
-  <div class="sandbox">
-    <nav class="floating-switcher" aria-label="Folder edit views">
-      <span>Folder edit</span>
+  <div class="sandbox siglab">
+    <nav class="floating-switcher" aria-label="Signature editor views">
+      <span>Signature editor</span>
       <button v-for="v in variants" :key="v.id" type="button" :class="{ active: variant === v.id }" @click="variant = v.id">{{ v.label }}</button>
     </nav>
 
-    <div class="stage">
-      <!-- REAL sidebar markup; styled by global shell.css -->
-      <aside class="sidebar sidebar-flat nav-icons">
-        <div class="account-wrap">
-          <button class="account account-command-trigger" type="button">
-            <span class="cmdprompt">~/</span>
-            <span class="cmdpath"><b>atterpac</b></span>
-            <PhCaretDown class="chev" :size="12" />
-          </button>
-        </div>
+    <div class="variant-note"><span>{{ blurb }}</span></div>
 
-        <button class="composebtn" type="button"><PhNotePencil :size="15" /><span class="navlabel">Compose</span> <kbd>c</kbd></button>
-
-        <div class="grouphead grouphead-row">
-          <span>Folders</span>
-          <button class="grouphead-action" type="button" title="New folder"><PhPlus :size="13" /></button>
-        </div>
-        <nav class="navgroup">
-          <div v-for="f in folders" :key="f.id" class="navrow" :class="{ anchor: isEditing(f) && (variant === 'popover' || variant === 'menu') }">
-
-            <!-- ===== INLINE ===== -->
-            <div v-if="isEditing(f) && variant === 'inline'" class="edit-inline">
-              <button class="icon-trigger" type="button" @click="iconOpen = !iconOpen"><component :is="pickedIcon" :size="16" /></button>
-              <input v-model="draftName" class="name-input" @keydown.enter="save" @keydown.esc="cancel" />
-              <button class="folder-mini ok" type="button" @click="save"><PhCheck :size="13" /></button>
-              <button class="folder-mini" type="button" @click="cancel"><PhX :size="13" /></button>
-              <div v-if="iconOpen" class="icon-pop">
-                <button v-for="(ic, i) in iconChoices" :key="i" type="button" :class="{ on: pickedIcon === ic }" @click="choose(ic)"><component :is="ic" :size="16" /></button>
-              </div>
-            </div>
-
-            <!-- ===== SWAP ===== -->
-            <div v-else-if="isEditing(f) && variant === 'swap'" class="edit-swap">
-              <button class="icon-trigger sm" type="button" @click="iconOpen = !iconOpen"><component :is="pickedIcon" :size="15" /></button>
-              <input v-model="draftName" class="name-input bare" @keydown.enter="save" @keydown.esc="cancel" />
-              <button class="folder-mini" type="button" title="Icon" @click="iconOpen = !iconOpen"><PhSmiley :size="13" /></button>
-              <button class="folder-mini" type="button" title="Delete"><PhTrash :size="13" /></button>
-              <button class="folder-mini ok" type="button" @click="save"><PhCheck :size="13" /></button>
-              <div v-if="iconOpen" class="icon-pop">
-                <button v-for="(ic, i) in iconChoices" :key="i" type="button" :class="{ on: pickedIcon === ic }" @click="choose(ic)"><component :is="ic" :size="16" /></button>
-              </div>
-            </div>
-
-            <!-- ===== default row (+ overlays for expand/popover/menu) ===== -->
-            <template v-else>
-              <button class="navitem" :class="{ active: activeId === f.id }" type="button" @click="startEdit(f)">
-                <span class="navicon"><component :is="isEditing(f) ? pickedIcon : f.icon" :size="16" /></span>
-                <span class="navlabel">{{ isEditing(f) ? (draftName || f.name) : f.name }}</span>
-                <span v-if="f.unread && !isEditing(f)" class="dot">{{ f.unread }}</span>
-              </button>
-              <div v-if="!isEditing(f)" class="navactions">
-                <button class="folder-mini" type="button" title="Set icon" @click="startEdit(f)"><PhSmiley :size="13" /></button>
-                <button class="folder-mini" type="button" title="Hide folder"><PhEyeSlash :size="13" /></button>
-                <button v-if="!f.role" class="folder-mini" type="button" title="Rename folder" @click="startEdit(f)"><PhPencilSimple :size="13" /></button>
-                <button v-if="!f.role" class="folder-mini" type="button" title="More"><PhDotsThree :size="13" /></button>
-              </div>
-
-              <!-- EXPAND card unfolds beneath the (still visible) row -->
-              <div v-if="isEditing(f) && variant === 'expand'" class="edit-card">
-                <div class="ec-row">
-                  <button class="icon-trigger lg" type="button" @click="iconOpen = !iconOpen"><component :is="pickedIcon" :size="20" /></button>
-                  <input v-model="draftName" class="name-input" @keydown.enter="save" @keydown.esc="cancel" />
-                </div>
-                <div v-if="iconOpen" class="icon-grid">
-                  <button v-for="(ic, i) in iconChoices" :key="i" type="button" :class="{ on: pickedIcon === ic }" @click="choose(ic)"><component :is="ic" :size="16" /></button>
-                </div>
-                <div class="ec-actions">
-                  <button class="ec-del" type="button"><PhTrash :size="13" /> Delete</button>
-                  <div class="spacer" />
-                  <button class="ec-cancel" type="button" @click="cancel">Cancel</button>
-                  <button class="ec-save" type="button" @click="save">Save</button>
-                </div>
-              </div>
-
-              <!-- POPOVER anchored to the row -->
-              <div v-if="isEditing(f) && variant === 'popover'" class="popover">
-                <header class="pop-head">Edit folder</header>
-                <div class="ec-row">
-                  <button class="icon-trigger" type="button" @click="iconOpen = !iconOpen"><component :is="pickedIcon" :size="16" /></button>
-                  <input v-model="draftName" class="name-input" @keydown.enter="save" @keydown.esc="cancel" />
-                </div>
-                <div class="icon-grid">
-                  <button v-for="(ic, i) in iconChoices" :key="i" type="button" :class="{ on: pickedIcon === ic }" @click="choose(ic)"><component :is="ic" :size="15" /></button>
-                </div>
-                <div class="ec-actions">
-                  <button class="ec-del" type="button"><PhTrash :size="13" /></button>
-                  <div class="spacer" />
-                  <button class="ec-cancel" type="button" @click="cancel">Cancel</button>
-                  <button class="ec-save" type="button" @click="save">Save</button>
-                </div>
-              </div>
-
-              <!-- MENU of actions -->
-              <div v-if="isEditing(f) && variant === 'menu'" class="ctx-menu">
-                <button type="button" @click="fireToast('Rename…')"><PhPencilSimple :size="14" /> Rename</button>
-                <button type="button" @click="fireToast('Pick icon…')"><PhSmiley :size="14" /> Change icon</button>
-                <button type="button" @click="fireToast('Hidden')"><PhEyeSlash :size="14" /> Hide</button>
-                <hr />
-                <button type="button" class="danger" @click="fireToast('Deleted')"><PhTrash :size="14" /> Delete</button>
-              </div>
-            </template>
+    <main class="sig-stage">
+      <section class="sig-panel" :class="`sig-${variant}`">
+        <header class="sig-head">
+          <div>
+            <PhSignature :size="18" />
+            <b>Signatures</b>
           </div>
-        </nav>
+          <button type="button" @click="addSignature"><PhPlus :size="14" /> New</button>
+        </header>
 
-        <p class="grouphead">Labels</p>
-        <nav class="navgroup">
-          <button v-for="l in labels" :key="l.id" class="navitem label" type="button">
-            <span class="navicon"><span class="swatch" :style="{ backgroundColor: l.swatch }" /></span>
-            <span class="navlabel">{{ l.name }}</span>
-          </button>
-        </nav>
+        <template v-if="variant === 'split'">
+          <nav class="sig-list">
+            <button v-for="signature in signatures" :key="signature.id" type="button" :class="{ active: selectedId === signature.id }" @click="selectedId = signature.id">
+              <b>{{ signature.name }}</b>
+              <small>{{ signature.default ? 'default' : `${signature.body.length} chars` }}</small>
+            </button>
+          </nav>
+          <article v-if="selected" class="sig-editor">
+            <input v-model="selected.name" />
+            <textarea v-model="selected.body" />
+            <footer><button type="button" @click="addLogo(selected)">Image</button><button type="button" @click="setDefault(selected.id)"><PhStar :size="13" /> Default</button><button type="button" @click="showToast('Saved')"><PhFloppyDisk :size="13" /> Save</button></footer>
+          </article>
+        </template>
 
-        <div class="sidebar-foot">
-          <button class="navitem settings-navitem" type="button">
-            <span class="navicon"><PhGearSix :size="16" /></span>
-            <span class="navlabel">Settings</span>
-          </button>
-        </div>
+        <template v-else-if="variant === 'cards'">
+          <div class="sig-card-grid">
+            <article v-for="signature in signatures" :key="signature.id" class="sig-card" :class="{ active: selectedId === signature.id }" @click="selectedId = signature.id">
+              <header><input v-model="signature.name" @click.stop /><button type="button" @click.stop="setDefault(signature.id)"><PhStar :weight="signature.default ? 'fill' : 'regular'" :size="14" /></button></header>
+              <textarea v-model="signature.body" @click.stop />
+              <footer><button type="button" @click.stop="addLogo(signature)">Image</button><button type="button" @click.stop="duplicateSignature(signature)"><PhCopy :size="13" /></button><button type="button" @click.stop="removeSignature(signature.id)"><PhTrash :size="13" /></button></footer>
+            </article>
+          </div>
+        </template>
 
-        <!-- SHEET slides over the sidebar -->
-        <transition name="sheet">
-          <div v-if="variant === 'sheet' && editing" class="sheet">
-            <header class="sheet-head"><b>Edit folder</b><button class="folder-mini" type="button" @click="cancel"><PhX :size="14" /></button></header>
-            <div class="field"><span>Icon</span>
-              <div class="icon-grid">
-                <button v-for="(ic, i) in iconChoices" :key="i" type="button" :class="{ on: pickedIcon === ic }" @click="pickedIcon = ic"><component :is="ic" :size="17" /></button>
-              </div>
-            </div>
-            <div class="field"><span>Name</span>
-              <input v-model="draftName" class="name-input solid" @keydown.enter="save" @keydown.esc="cancel" />
-            </div>
-            <div class="sheet-foot">
-              <button class="ec-del" type="button"><PhTrash :size="13" /> Delete</button>
-              <div class="spacer" />
-              <button class="ec-cancel" type="button" @click="cancel">Cancel</button>
-              <button class="ec-save" type="button" @click="save">Save</button>
+        <template v-else-if="variant === 'inline'">
+          <div class="sig-table">
+            <div v-for="signature in signatures" :key="signature.id" class="sig-row" :class="{ active: selectedId === signature.id }">
+              <button type="button" @click="selectedId = signature.id"><PhSignature :size="14" /></button>
+              <input v-model="signature.name" />
+              <textarea v-model="signature.body" />
+              <button type="button" @click="setDefault(signature.id)"><PhStar :weight="signature.default ? 'fill' : 'regular'" :size="14" /></button>
+              <button type="button" @click="removeSignature(signature.id)"><PhTrash :size="14" /></button>
             </div>
           </div>
-        </transition>
-      </aside>
+        </template>
 
-      <p class="hint">Click any folder row to open its edit view · style: <b>{{ variant }}</b></p>
-    </div>
+        <template v-else-if="variant === 'preview'">
+          <article v-if="selected" class="sig-editor">
+            <div class="sig-editor-row"><input v-model="selected.name" /><button type="button" @click="setDefault(selected.id)"><PhStar :weight="selected.default ? 'fill' : 'regular'" :size="14" /></button></div>
+            <textarea v-model="selected.body" />
+          </article>
+          <aside class="compose-preview">
+            <p>Thanks, I can take a look this afternoon.</p>
+            <div class="preview-signature" v-html="selected?.html" />
+          </aside>
+        </template>
+
+        <template v-else-if="variant === 'compact'">
+          <article v-if="selected" class="sig-compact-editor">
+            <select v-model="selectedId">
+              <option v-for="signature in signatures" :key="signature.id" :value="signature.id">{{ signature.name }}{{ signature.default ? ' · default' : '' }}</option>
+            </select>
+            <input v-model="selected.name" />
+            <textarea v-model="selected.body" />
+            <footer><button type="button" @click="addLogo()">Image</button><button type="button" @click="setDefault(selected.id)">Make default</button><button type="button" @click="duplicateSignature()">Duplicate</button></footer>
+          </article>
+        </template>
+
+        <template v-else>
+          <nav class="sig-command-list">
+            <button v-for="(signature, index) in signatures" :key="signature.id" type="button" :class="{ active: selectedId === signature.id }" @click="selectedId = signature.id">
+              <kbd>{{ index + 1 }}</kbd><span>{{ signature.name }}</span><small>{{ signature.default ? 'default' : 'saved' }}</small>
+            </button>
+          </nav>
+          <article v-if="selected" class="sig-editor command-editor">
+            <input v-model="selected.name" />
+            <textarea v-model="selected.body" />
+            <footer>
+              <button type="button" @click="setDefault(selected.id)"><PhStar :size="13" /> Default</button>
+              <button type="button" @click="addLogo()"><PhSignature :size="13" /> Image</button>
+              <button type="button" @click="duplicateSignature()"><PhCopy :size="13" /> Duplicate</button>
+              <button type="button" @click="removeSignature(selected.id)"><PhTrash :size="13" /> Delete</button>
+              <button type="button" @click="showToast('More actions')"><PhDotsThree :size="13" /></button>
+            </footer>
+          </article>
+        </template>
+      </section>
+    </main>
 
     <transition name="toast"><div v-if="toast" class="toast"><PhCheck :size="14" /> {{ toast }}</div></transition>
-    <div class="variant-note"><span>{{ blurb }}</span></div>
   </div>
 </template>
 
 <style scoped>
-/* Rely on the global theme tokens (tokens.css) so this matches the live app.
-   Only a local --surface-3 fallback for the few raised surfaces below. */
-.sandbox{ --surface-3: color-mix(in oklab, var(--surface-2) 80%, var(--text-mut) 12%);
-  position:relative;height:100%;min-height:0;overflow:hidden;color:var(--text);background:var(--bg);font:14px "Hanken Grotesk",Inter,ui-sans-serif,system-ui,sans-serif }
-button{font:inherit;cursor:pointer}
-input{font:inherit}
-
+.siglab{position:relative;height:100%;min-height:0;overflow:hidden;color:var(--text);background:var(--bg);font:14px "Hanken Grotesk",Inter,ui-sans-serif,system-ui,sans-serif}
+button,input,textarea,select{font:inherit}
+button{cursor:pointer}
 .floating-switcher{position:fixed;left:50%;top:14px;z-index:60;display:flex;align-items:center;gap:5px;max-width:calc(100vw - 28px);padding:6px;border:1px solid var(--border-2);border-radius:12px;background:color-mix(in oklab,var(--surface) 90%,transparent);box-shadow:var(--shadow-2);backdrop-filter:blur(10px);transform:translateX(-50%)}
 .floating-switcher span{padding:0 9px;color:var(--text-mut);font:11px "JetBrains Mono",ui-monospace,monospace}
 .floating-switcher button{height:30px;border:0;border-radius:8px;background:transparent;color:var(--text-dim);padding:0 12px;font:12px "JetBrains Mono",ui-monospace,monospace}
 .floating-switcher button:hover,.floating-switcher button.active{background:var(--accent-soft);color:var(--accent)}
 .variant-note{position:absolute;top:58px;left:50%;transform:translateX(-50%);z-index:40;border:1px solid var(--border-2);border-radius:999px;background:var(--surface-2);padding:5px 13px;color:var(--text-mut);font:11px "JetBrains Mono",ui-monospace,monospace}
-
-.stage{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;gap:20px;padding:104px 16px 16px}
-.sidebar{width:264px;height:min(560px,calc(100% - 40px))}
-.hint{margin:0;color:var(--text-mut);font:12px "JetBrains Mono",ui-monospace,monospace}.hint b{color:var(--accent)}
-.swatch{width:9px;height:9px;border-radius:50%}
-
-/* ---- edit-view pieces (scoped) ---- */
-.icon-trigger{flex:none;display:grid;place-items:center;width:30px;height:30px;border:1px solid var(--border-2);border-radius:8px;background:var(--surface-3);color:var(--accent)}
-.icon-trigger.sm{width:26px;height:26px}
-.icon-trigger.lg{width:38px;height:38px;border-radius:10px}
-.icon-trigger:hover{border-color:var(--accent-line)}
-.name-input{flex:1;min-width:0;border:1px solid var(--border-2);border-radius:8px;background:var(--bg);color:var(--text);padding:7px 9px;outline:none}
-.name-input:focus{border-color:var(--accent-line)}
-.name-input.bare{border-color:transparent;background:transparent;padding:6px 4px}
-.name-input.solid{background:var(--surface-3)}
-.folder-mini.ok{color:var(--green);border-color:color-mix(in oklab,var(--green) 40%,var(--border-2))}
-
-.icon-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px}
-.icon-grid button{display:grid;place-items:center;aspect-ratio:1;border:1px solid transparent;border-radius:8px;background:var(--surface-3);color:var(--text-dim)}
-.icon-grid button:hover{color:var(--text)}
-.icon-grid button.on{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent)}
-
-.icon-pop{position:absolute;top:calc(100% + 5px);left:0;z-index:30;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:6px;border:1px solid var(--border-2);border-radius:11px;background:var(--surface);box-shadow:var(--shadow-2)}
-.icon-pop button{display:grid;place-items:center;width:32px;height:32px;border:1px solid transparent;border-radius:8px;background:var(--surface-3);color:var(--text-dim)}
-.icon-pop button.on{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent)}
-
-/* INLINE / SWAP — replace the row content */
-.edit-inline{position:relative;display:flex;align-items:center;gap:5px;width:100%;padding:3px;border-radius:9px;background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--accent-line)}
-.edit-swap{position:relative;display:flex;align-items:center;gap:3px;width:100%;padding:3px 5px;border-radius:9px;background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--border-2)}
-
-/* EXPAND */
-.navrow{flex-wrap:wrap}
-.edit-card{flex-basis:100%;margin:4px 0 6px;padding:11px;border:1px solid var(--border-2);border-radius:12px;background:var(--surface-2);display:grid;gap:9px}
-.ec-row{display:flex;align-items:center;gap:9px}
-.ec-actions{display:flex;align-items:center;gap:7px}.ec-actions .spacer{flex:1}
-.ec-del{display:flex;align-items:center;gap:5px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--red);padding:6px 9px;font-size:12px}.ec-del:hover{background:color-mix(in oklab,var(--red) 14%,transparent)}
-.ec-cancel{border:1px solid var(--border-2);border-radius:8px;background:var(--surface-3);color:var(--text-dim);padding:6px 12px;font-size:12px}
-.ec-save{border:1px solid var(--accent-line);border-radius:8px;background:var(--accent);color:var(--accent-ink);padding:6px 14px;font-size:12px;font-weight:600}
-
-/* POPOVER / MENU need the row to allow overflow */
-.navrow.anchor{overflow:visible}
-.popover{position:absolute;top:calc(100% + 6px);left:0;z-index:30;width:248px;padding:12px;border:1px solid var(--border-2);border-radius:13px;background:var(--surface);box-shadow:var(--shadow-2),var(--top-hi);display:grid;gap:10px}
-.pop-head{color:var(--text-mut);font:11px "JetBrains Mono",ui-monospace,monospace;text-transform:uppercase}
-
-.ctx-menu{position:absolute;top:calc(100% + 5px);left:8px;z-index:30;width:190px;padding:5px;border:1px solid var(--border-2);border-radius:11px;background:var(--surface);box-shadow:var(--shadow-2);display:grid;gap:1px}
-.ctx-menu button{display:flex;align-items:center;gap:10px;border:0;border-radius:7px;background:transparent;color:var(--text-dim);padding:8px 10px;text-align:left;font-size:13px}
-.ctx-menu button:hover{background:var(--surface-2);color:var(--text)}
-.ctx-menu button.danger{color:var(--red)}.ctx-menu button.danger:hover{background:color-mix(in oklab,var(--red) 14%,transparent)}
-.ctx-menu hr{margin:3px 6px;border:0;border-top:1px solid var(--border)}
-
-/* SHEET */
-.sheet{position:absolute;left:0;right:0;top:0;bottom:0;z-index:40;display:flex;flex-direction:column;gap:14px;padding:16px;border-radius:16px;background:var(--surface);box-shadow:var(--shadow-2)}
-.sheet-head{display:flex;align-items:center;justify-content:space-between}.sheet-head b{color:var(--head);font-size:15px}
-.field{display:grid;gap:7px}.field>span{color:var(--text-mut);font:11px "JetBrains Mono",ui-monospace,monospace;text-transform:uppercase}
-.sheet-foot{margin-top:auto;display:flex;align-items:center;gap:7px}.sheet-foot .spacer{flex:1}
-.sheet-enter-active,.sheet-leave-active{transition:transform .22s ease,opacity .22s}.sheet-enter-from,.sheet-leave-to{transform:translateX(-12px);opacity:0}
-
+.sig-stage{position:absolute;inset:0;display:grid;place-items:center;padding:110px 24px 28px}
+.sig-panel{display:grid;grid-template-columns:220px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);gap:14px;width:min(980px,100%);height:min(620px,100%);border:1px solid var(--border-2);border-radius:16px;background:var(--surface);box-shadow:var(--shadow-2);padding:16px;overflow:hidden}
+.sig-head{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:12px}
+.sig-head div,.sig-head button,.sig-editor footer button,.sig-card footer button,.sig-compact-editor footer button{display:flex;align-items:center;gap:7px}
+.sig-head b{font-size:15px;color:var(--head)}
+.sig-head svg{color:var(--accent)}
+.sig-head button,.sig-editor footer button,.sig-card footer button,.sig-compact-editor footer button{border:1px solid var(--border-2);border-radius:8px;background:var(--surface-2);color:var(--text-dim);padding:7px 10px;font-size:12px}
+.sig-list{display:flex;flex-direction:column;gap:6px;min-width:0}
+.sig-list button{display:grid;gap:3px;border:1px solid var(--border-2);border-radius:10px;background:transparent;color:var(--text-dim);text-align:left;padding:10px}
+.sig-list button.active{border-color:var(--accent-line);background:var(--accent-soft)}
+.sig-list b{color:var(--text)}
+.sig-list small{color:var(--text-mut)}
+.sig-editor,.sig-compact-editor{min-width:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:10px}
+.sig-editor input,.sig-editor textarea,.sig-compact-editor input,.sig-compact-editor textarea,.sig-compact-editor select,.sig-card input,.sig-card textarea,.sig-row input,.sig-row textarea{border:1px solid var(--border-2);border-radius:9px;background:var(--bg);color:var(--text);outline:none;padding:9px 10px}
+.sig-editor textarea,.sig-compact-editor textarea,.sig-card textarea,.sig-row textarea{resize:none;line-height:1.45;font:12.5px "JetBrains Mono",ui-monospace,monospace}
+.sig-editor input:focus,.sig-editor textarea:focus,.sig-compact-editor input:focus,.sig-compact-editor textarea:focus,.sig-compact-editor select:focus,.sig-card input:focus,.sig-card textarea:focus,.sig-row input:focus,.sig-row textarea:focus{border-color:var(--accent-line)}
+.sig-editor footer,.sig-card footer,.sig-compact-editor footer{display:flex;justify-content:flex-end;gap:8px}
+.sig-card-grid{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;overflow:auto}
+.sig-card{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:8px;min-height:220px;border:1px solid var(--border-2);border-radius:12px;background:var(--surface-2);padding:11px}
+.sig-card.active{border-color:var(--accent-line)}
+.sig-card header{display:flex;gap:8px}.sig-card header input{flex:1}.sig-card header button,.sig-row button{border:1px solid var(--border-2);border-radius:8px;background:var(--surface);color:var(--text-dim);padding:0 8px}
+.sig-card header button svg,.sig-row button svg{color:var(--accent)}
+.sig-table{grid-column:1/-1;display:grid;align-content:start;gap:7px;overflow:auto}
+.sig-row{display:grid;grid-template-columns:34px 180px minmax(0,1fr) 34px 34px;gap:7px;min-height:58px}
+.sig-row.active input,.sig-row.active textarea{border-color:var(--accent-line);background:var(--accent-soft)}
+.sig-preview{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.sig-editor-row{display:flex;gap:8px}.sig-editor-row input{flex:1}
+.compose-preview{border:1px solid var(--border-2);border-radius:12px;background:#fff;color:#24262d;padding:28px;font:15px Georgia,serif;overflow:auto}
+.preview-signature{margin-top:28px;color:#464a55;font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}
+.preview-signature:before{content:"--";display:block;margin-bottom:4px}
+.preview-signature img{max-width:100%;height:auto}
+.sig-compact{grid-template-columns:minmax(0,560px);justify-content:center}
+.sig-compact .sig-head,.sig-compact-editor{grid-column:1}
+.sig-compact-editor footer{justify-content:flex-start}
+.sig-command{grid-template-columns:280px minmax(0,1fr)}
+.sig-command-list{display:grid;align-content:start;gap:6px}
+.sig-command-list button{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:8px;border:1px solid var(--border-2);border-radius:10px;background:transparent;color:var(--text-dim);padding:8px;text-align:left}
+.sig-command-list button.active{border-color:var(--accent-line);background:var(--accent-soft)}
+.sig-command-list kbd{display:grid;place-items:center;width:22px;height:22px;border:1px solid var(--border-2);border-radius:6px;color:var(--accent);font:11px "JetBrains Mono",ui-monospace,monospace}
+.sig-command-list span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.sig-command-list small{color:var(--text-mut)}
+.command-editor footer{justify-content:flex-start;flex-wrap:wrap}
 .toast{position:absolute;left:50%;bottom:32px;z-index:50;transform:translateX(-50%);display:flex;align-items:center;gap:8px;border:1px solid var(--accent-line);border-radius:10px;background:var(--surface-2);color:var(--text);padding:10px 15px;font:12.5px "JetBrains Mono",ui-monospace,monospace;box-shadow:var(--shadow-2)}
 .toast svg{color:var(--green)}
 .toast-enter-active,.toast-leave-active{transition:opacity .18s,transform .18s}.toast-enter-from,.toast-leave-to{opacity:0;transform:translate(-50%,8px)}
+@media (max-width: 760px){.sig-panel,.sig-command{grid-template-columns:1fr}.sig-list,.sig-command-list{max-height:170px;overflow:auto}.sig-card-grid{grid-template-columns:1fr}.sig-row{grid-template-columns:34px minmax(0,1fr) 34px 34px}.sig-row textarea{grid-column:2/-1}.compose-preview{display:none}}
 </style>

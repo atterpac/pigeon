@@ -41,6 +41,26 @@ export function formatDate(value: string) {
     : date.toLocaleDateString([], { weekday: 'short' })
 }
 
+// Compact wake-time for snoozed rows: "in 40m", "in 3h", "tomorrow 9 AM",
+// "Mon 9 AM", or "Jun 30" for anything further out.
+export function formatWakeTime(value: string) {
+  const date = new Date(value)
+  const now = new Date()
+  const diffMs = date.getTime() - now.getTime()
+  if (diffMs <= 0) return 'now'
+  const mins = Math.round(diffMs / 60000)
+  if (mins < 60) return `in ${mins}m`
+  const hours = Math.round(mins / 60)
+  if (hours < 12) return `in ${hours}h`
+  const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+  if (date.toDateString() === now.toDateString()) return time
+  if (date.toDateString() === tomorrow.toDateString()) return `tomorrow ${time}`
+  const days = Math.round(diffMs / 86_400_000)
+  if (days < 7) return `${date.toLocaleDateString([], { weekday: 'short' })} ${time}`
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
 export function labelFor(conversation: Conversation | null, labels: Label[]) {
   return labels.find((label) => conversation?.labelIds.includes(label.id))
 }
@@ -56,6 +76,15 @@ export function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error || 'Unknown error')
 }
 
+// Human-readable byte size for attachment chips/rows (e.g. "12 KB", "3.4 MB").
+export function formatBytes(bytes: number) {
+  if (!bytes || bytes < 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const exponent = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)))
+  const value = bytes / 1024 ** exponent
+  return `${exponent === 0 ? value : value.toFixed(value >= 10 ? 0 : 1)} ${units[exponent]}`
+}
+
 // Remove the email's own scripts/handlers before display: marketing JS is a
 // source of variable render cost (and an XSS surface). Our injected link
 // handler below still runs under sandbox="allow-scripts".
@@ -67,8 +96,78 @@ function stripActiveContent(html: string) {
     .replace(/javascript:/gi, '')
 }
 
-export function renderEmailHtml(html: string) {
-  return `<!doctype html><html><head><base target="_blank"><meta name="referrer" content="no-referrer"><style>html,body{margin:0;padding:0;background:#fff;color:#111}body{overflow-wrap:anywhere;overflow:hidden}img{max-width:100%;height:auto}</style></head><body>${stripActiveContent(html)}<script>
+function isRemoteUrl(url: string) {
+  return /^\s*(?:https?:)?\/\//i.test(url)
+}
+
+// Neutralize remote images *in the HTML string* before it ever reaches the
+// iframe, so tracking pixels never fire on open. Original URLs are stashed in
+// data-ef-* attributes so the iframe can restore them when the user clicks
+// "Load images". cid:/data: (inline) images are left untouched.
+function neutralizeRemoteImages(html: string): { html: string; count: number } {
+  let count = 0
+  // <img> src / srcset
+  html = html.replace(/<img\b[^>]*>/gi, (tag) => {
+    let changed = false
+    const out = tag.replace(/\b(src|srcset)\s*=\s*(["'])(.*?)\2/gi, (whole, attr: string, quote: string, val: string) => {
+      if (!isRemoteUrl(val)) return whole
+      changed = true
+      return `data-ef-${attr.toLowerCase()}=${quote}${val}${quote}`
+    })
+    if (changed) count++
+    return out
+  })
+  // Inline-style background images: keep other declarations, swap the remote
+  // url() for none, and stash the original so it can be restored.
+  html = html.replace(/\bstyle\s*=\s*(["'])(.*?)\1/gi, (whole, quote: string, val: string) => {
+    if (!/url\(\s*['"]?(?:https?:)?\/\//i.test(val)) return whole
+    count++
+    const stripped = val.replace(/url\(\s*['"]?(?:https?:)?\/\/[^)]*\)/gi, 'none')
+    return `data-ef-style=${quote}${val}${quote} style=${quote}${stripped}${quote}`
+  })
+  return { html, count }
+}
+
+// Inline (cid:) image source. `content` is base64 of the image bytes.
+export type InlineImage = { contentType: string; content: string }
+
+// Rewrite cid: references in src/srcset/style url() to data: URLs using the
+// message's inline parts, so embedded images render without any network fetch.
+// cid is local, so this is allowed even when remote images are blocked.
+export function inlineCidImages(html: string, images?: Record<string, InlineImage>): string {
+  if (!images || !Object.keys(images).length) return html
+  const resolve = (cid: string): string | null => {
+    const key = decodeURIComponent(cid.trim()).replace(/^<|>$/g, '')
+    const img = images[key]
+    return img && img.content ? `data:${img.contentType || 'application/octet-stream'};base64,${img.content}` : null
+  }
+  return html
+    .replace(/\b(src|srcset)\s*=\s*(["'])\s*cid:([^"']+)\2/gi, (whole, attr: string, quote: string, cid: string) => {
+      const url = resolve(cid)
+      return url ? `${attr}=${quote}${url}${quote}` : whole
+    })
+    .replace(/url\(\s*['"]?cid:([^)'"]+)['"]?\s*\)/gi, (whole, cid: string) => {
+      const url = resolve(cid)
+      return url ? `url("${url}")` : whole
+    })
+}
+
+export function renderEmailHtml(html: string, blockImages = false, inlineImages?: Record<string, InlineImage>) {
+  const safe = stripActiveContent(html)
+  const { html: neutral, count: blocked } = blockImages ? neutralizeRemoteImages(safe) : { html: safe, count: 0 }
+  const bodyHtml = inlineCidImages(neutral, inlineImages)
+  return `<!doctype html><html><head><base target="_blank"><meta name="referrer" content="no-referrer"><style>html,body{margin:0;padding:0;background:#fff;color:#111}body{overflow-wrap:anywhere;overflow:hidden}img{max-width:100%;height:auto}</style></head><body>${bodyHtml}<script>
+var EF_BLOCKED = ${blocked};
+// Restore the real image sources stashed by neutralizeRemoteImages.
+function efLoadImages() {
+  Array.prototype.forEach.call(document.querySelectorAll('img[data-ef-src]'), function(el) { el.setAttribute('src', el.getAttribute('data-ef-src')); el.removeAttribute('data-ef-src'); });
+  Array.prototype.forEach.call(document.querySelectorAll('img[data-ef-srcset]'), function(el) { el.setAttribute('srcset', el.getAttribute('data-ef-srcset')); el.removeAttribute('data-ef-srcset'); });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-ef-style]'), function(el) { el.setAttribute('style', el.getAttribute('data-ef-style')); el.removeAttribute('data-ef-style'); });
+}
+window.addEventListener('message', function(ev) {
+  if ((ev.data || {}).type === 'email-load-images') { efLoadImages(); setTimeout(reportHeight, 0); }
+});
+
 document.addEventListener('click', function(event) {
   var link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
   if (!link) return;
@@ -91,6 +190,7 @@ Array.prototype.forEach.call(document.images, function(img) {
   if (!img.complete) img.addEventListener('load', reportHeight);
 });
 reportHeight();
+if (EF_BLOCKED > 0) window.parent.postMessage({ type: 'email-images-blocked', count: EF_BLOCKED }, '*');
 // In-thread find: the parent can't read this sandboxed document, so it asks us
 // to highlight matches and reports back counts + match positions.
 (function() {
@@ -160,6 +260,8 @@ reportHeight();
 
 export function renderInlineMarkdown(line: string) {
   return escapeHtml(line)
+    // Images first so ![alt](src) isn't mistaken for a link. Allow cid:/data:/http(s).
+    .replace(/!\[([^\]]*)\]\((cid:[^)\s]+|data:[^)\s]+|https?:\/\/[^)\s]+)\)/g, '<img src="$2" alt="$1" />')
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/_([^_\n]+)_/g, '<em>$1</em>')

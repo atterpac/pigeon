@@ -117,6 +117,44 @@ export enum Category {
 };
 
 /**
+ * Contact is an address-book entry harvested from message envelopes: an address
+ * plus the most-recent display name seen for it, with frequency/recency used to
+ * rank recipient autocomplete.
+ */
+export class Contact {
+    "Name": string;
+    "Addr": string;
+    "LastSeen": time$0.Time;
+    "Freq": number;
+
+    /** Creates a new Contact instance. */
+    constructor($$source: Partial<Contact> = {}) {
+        if (!("Name" in $$source)) {
+            this["Name"] = "";
+        }
+        if (!("Addr" in $$source)) {
+            this["Addr"] = "";
+        }
+        if (!("LastSeen" in $$source)) {
+            this["LastSeen"] = null;
+        }
+        if (!("Freq" in $$source)) {
+            this["Freq"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Contact instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Contact {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new Contact($$parsedSource as Partial<Contact>);
+    }
+}
+
+/**
  * Draft is a locally-saved, autosaved compose draft.
  */
 export class Draft {
@@ -173,7 +211,8 @@ export enum Flag {
 };
 
 /**
- * Kind distinguishes the backend used by an account.
+ * Kind distinguishes the backend used by an account. IMAP/SMTP is the only
+ * backend; the type is retained for the stored account schema and future use.
  */
 export enum Kind {
     /**
@@ -182,7 +221,6 @@ export enum Kind {
     $zero = 0,
 
     KindIMAP = 0,
-    KindGmail = 1,
 };
 
 /**
@@ -298,6 +336,8 @@ export class Message {
      * BodyLoaded reports whether Parts are populated in the store.
      */
     "BodyLoaded": boolean;
+    "BodyCachedAt": time$0.Time;
+    "LastOpenedAt": time$0.Time;
     "Parts": Part[];
 
     /** Creates a new Message instance. */
@@ -353,6 +393,12 @@ export class Message {
         if (!("BodyLoaded" in $$source)) {
             this["BodyLoaded"] = false;
         }
+        if (!("BodyCachedAt" in $$source)) {
+            this["BodyCachedAt"] = null;
+        }
+        if (!("LastOpenedAt" in $$source)) {
+            this["LastOpenedAt"] = null;
+        }
         if (!("Parts" in $$source)) {
             this["Parts"] = [];
         }
@@ -371,7 +417,7 @@ export class Message {
         const $$createField11_0 = $$createType3;
         const $$createField12_0 = $$createType4;
         const $$createField15_0 = $$createType5;
-        const $$createField17_0 = $$createType7;
+        const $$createField19_0 = $$createType7;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("From" in $$parsedSource) {
             $$parsedSource["From"] = $$createField4_0($$parsedSource["From"]);
@@ -395,7 +441,7 @@ export class Message {
             $$parsedSource["References"] = $$createField15_0($$parsedSource["References"]);
         }
         if ("Parts" in $$parsedSource) {
-            $$parsedSource["Parts"] = $$createField17_0($$parsedSource["Parts"]);
+            $$parsedSource["Parts"] = $$createField19_0($$parsedSource["Parts"]);
         }
         return new Message($$parsedSource as Partial<Message>);
     }
@@ -415,6 +461,12 @@ export class Outfile {
     "ContentType": string;
     "Content": string;
 
+    /**
+     * ContentID, when set, marks this as an inline part (Content-Disposition:
+     * inline) embeddable from the HTML body via cid:<ContentID>.
+     */
+    "ContentID": string;
+
     /** Creates a new Outfile instance. */
     constructor($$source: Partial<Outfile> = {}) {
         if (!("Filename" in $$source)) {
@@ -425,6 +477,9 @@ export class Outfile {
         }
         if (!("Content" in $$source)) {
             this["Content"] = "";
+        }
+        if (!("ContentID" in $$source)) {
+            this["ContentID"] = "";
         }
 
         Object.assign(this, $$source);
@@ -560,6 +615,12 @@ export class Part {
      */
     "Disposition": string;
     "Filename": string;
+
+    /**
+     * ContentID is the bare Content-ID (no angle brackets) for inline parts
+     * referenced from HTML via cid: URLs; empty for ordinary parts.
+     */
+    "ContentID": string;
     "Size": number;
 
     /**
@@ -583,6 +644,9 @@ export class Part {
         if (!("Filename" in $$source)) {
             this["Filename"] = "";
         }
+        if (!("ContentID" in $$source)) {
+            this["ContentID"] = "";
+        }
         if (!("Size" in $$source)) {
             this["Size"] = 0;
         }
@@ -600,10 +664,10 @@ export class Part {
      * Creates a new Part instance from a string or object.
      */
     static createFrom($$source: any = {}): Part {
-        const $$createField5_0 = $Create.ByteSlice;
+        const $$createField6_0 = $Create.ByteSlice;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Content" in $$parsedSource) {
-            $$parsedSource["Content"] = $$createField5_0($$parsedSource["Content"]);
+            $$parsedSource["Content"] = $$createField6_0($$parsedSource["Content"]);
         }
         return new Part($$parsedSource as Partial<Part>);
     }

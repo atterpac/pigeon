@@ -1,4 +1,4 @@
-import type { Account, Address, ComposeDraft, Conversation, Label, Mailbox, MailClient, ThreadMessage } from './types'
+import type { Account, Address, ComposeDraft, Contact, Conversation, Label, Mailbox, MailClient, ThreadMessage } from './types'
 
 const me: Account = { id: 'dev', email: 'dev@example.com', name: 'You' }
 const a = (name: string, addr: string): Address => ({ name, addr })
@@ -36,6 +36,8 @@ const threads: Record<string, ThreadMessage[]> = {
   ],
 }
 let drafts: ComposeDraft[] = []
+// Held sends awaiting delivery, keyed by op id (simulates the outbox undo-send window).
+const pendingSends = new Map<string, ReturnType<typeof setTimeout>>()
 
 export function createMockMailClient(): MailClient {
   return {
@@ -46,7 +48,9 @@ export function createMockMailClient(): MailClient {
     async listConversations(mailboxId) { return sort(conversations.filter((c) => c.mailboxIds.includes(mailboxId) || c.labelIds.includes(mailboxId))) },
     async preloadMailboxBodies() { return 0 },
     async reclassifyMailbox() { return 0 },
+    async searchContacts(query) { return searchContacts(query) },
     async searchConversations(query) { return sort(conversations.filter((c) => matches(c, query))) },
+    async searchServer(query) { return sort(conversations.filter((c) => matches(c, query))) },
     async getThread(threadId) {
       const conversation = get(threadId)
       conversation.unread = false
@@ -54,8 +58,11 @@ export function createMockMailClient(): MailClient {
       return { conversation: { ...conversation }, messages: threads[threadId].map((message) => ({ ...message })) }
     },
     async archiveThread(threadId) { mutate(threadId, (c) => { c.mailboxIds = c.mailboxIds.filter((id) => id !== 'INBOX'); c.mailboxIds.push('DONE') }) },
-    async snoozeThread(threadId) { mutate(threadId, (c) => { c.mailboxIds = c.mailboxIds.filter((id) => id !== 'INBOX'); c.mailboxIds.push('SNOOZED') }) },
+    async snoozeThread(threadId) { mutate(threadId, (c) => { c.mailboxIds = c.mailboxIds.filter((id) => id !== 'INBOX'); c.mailboxIds.push('SNOOZED'); c.snoozedUntil = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString() }) },
+    async listSnoozed() { return sort(conversations.filter((c) => c.mailboxIds.includes('SNOOZED'))).map((c, index) => ({ ...c, snoozedUntil: c.snoozedUntil ?? new Date(Date.now() + (index + 1) * 3 * 60 * 60 * 1000).toISOString() })) },
+    async unsnooze(threadId) { mutate(threadId, (c) => { c.mailboxIds = c.mailboxIds.filter((id) => id !== 'SNOOZED'); if (!c.mailboxIds.includes('INBOX')) c.mailboxIds.push('INBOX'); c.snoozedUntil = undefined }) },
     async moveThread(threadId, mailboxId) { mutate(threadId, (c) => { c.mailboxIds = c.mailboxIds.filter((id) => id !== 'INBOX'); if (!c.mailboxIds.includes(mailboxId)) c.mailboxIds.push(mailboxId) }) },
+    async deleteThread(threadId) { mutate(threadId, (c) => { c.mailboxIds = c.mailboxIds.filter((id) => id !== 'INBOX').concat('TRASH') }) },
     async applyLabel(threadId, labelId) { mutate(threadId, (c) => { if (!c.labelIds.includes(labelId)) c.labelIds.push(labelId) }) },
     async createLabel(name) { const id = name.trim().toLowerCase().replace(/\s+/g, '-'); const existing = labels.find((l) => l.id === id); if (existing) return existing; const label: Label = { id, name: name.trim(), count: 0, swatch: '#7aa2f7', bg: 'rgba(122,162,247,.16)', fg: '#7aa2f7' }; labels.push(label); return label },
     async createMailbox(name) { const id = name.trim().toUpperCase().replace(/\s+/g, '_'); const existing = mailboxes.find((m) => m.id === id); if (existing) return existing; const mailbox: Mailbox = { id, name: name.trim(), unread: 0, total: 0 }; mailboxes.push(mailbox); return mailbox },
@@ -64,8 +71,22 @@ export function createMockMailClient(): MailClient {
     async toggleStar(threadId, on) { mutate(threadId, (c) => { c.starred = on ?? !c.starred }) },
     async markThreadRead(threadId, read) { mutate(threadId, (c) => { c.unread = !read }) },
     async saveDraft(draft) { const saved = { ...draft, updatedAt: new Date().toISOString() }; drafts = drafts.filter((d) => d.id !== saved.id).concat(saved); return saved },
-    async sendDraft(draft) { const sent = row(`sent-${Date.now()}`, 'You', me.email, draft.subject || '(no subject)', draft.body.split('\n').find(Boolean) || '', new Date().toISOString(), ['team'], false); sent.mailboxIds = ['SENT']; conversations = [sent, ...conversations]; drafts = drafts.filter((d) => d.id !== draft.id) },
+    async sendDraft(draft, holdSeconds = 0) {
+      drafts = drafts.filter((d) => d.id !== draft.id)
+      const finalize = () => { const sent = row(`sent-${Date.now()}`, 'You', me.email, draft.subject || '(no subject)', draft.body.split('\n').find(Boolean) || '', new Date().toISOString(), ['team'], false); sent.mailboxIds = ['SENT']; conversations = [sent, ...conversations] }
+      if (holdSeconds > 0) { const id = `send-${Date.now()}`; pendingSends.set(id, setTimeout(() => { pendingSends.delete(id); finalize() }, holdSeconds * 1000)); return id }
+      finalize(); return ''
+    },
+    async cancelSend(opId) { const timer = pendingSends.get(opId); if (timer) { clearTimeout(timer); pendingSends.delete(opId) } },
     async discardDraft(draftId) { drafts = drafts.filter((d) => d.id !== draftId) },
+    async saveAttachment() { return '' },
+    async archiveThreads(ids) { for (const id of ids) mutate(id, (c) => { c.mailboxIds = c.mailboxIds.filter((m) => m !== 'INBOX'); c.mailboxIds.push('DONE') }) },
+    async deleteThreads(ids) { for (const id of ids) mutate(id, (c) => { c.mailboxIds = c.mailboxIds.filter((m) => m !== 'INBOX').concat('TRASH') }) },
+    async moveThreads(ids, mailboxId) { for (const id of ids) mutate(id, (c) => { c.mailboxIds = c.mailboxIds.filter((m) => m !== 'INBOX'); if (!c.mailboxIds.includes(mailboxId)) c.mailboxIds.push(mailboxId) }) },
+    async labelThreads(ids, labelId) { for (const id of ids) mutate(id, (c) => { if (!c.labelIds.includes(labelId)) c.labelIds.push(labelId) }) },
+    async starThreads(ids, on) { for (const id of ids) mutate(id, (c) => { c.starred = on }) },
+    async markThreadsRead(ids, read) { for (const id of ids) mutate(id, (c) => { c.unread = !read }) },
+    async snoozeThreads(ids) { for (const id of ids) mutate(id, (c) => { c.mailboxIds = c.mailboxIds.filter((m) => m !== 'INBOX'); c.mailboxIds.push('SNOOZED'); c.snoozedUntil = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString() }) },
   }
 }
 
@@ -80,6 +101,27 @@ function sort(items: Conversation[]) { return [...items].sort((left, right) => D
 function get(id: string) { const found = conversations.find((c) => c.id === id); if (!found) throw new Error(`unknown thread ${id}`); return found }
 function mutate(id: string, apply: (conversation: Conversation) => void) { apply(get(id)) }
 function refreshMailboxes() { mailboxes = mailboxes.map((m) => { const rows = conversations.filter((c) => c.mailboxIds.includes(m.id)); return { ...m, total: rows.length, unread: rows.filter((c) => c.unread).length } }); return mailboxes }
+// Derive a mock address book from conversation participants, ranked by how
+// often each address appears (a stand-in for the backend's frequency score).
+function searchContacts(query: string): Contact[] {
+  const freq = new Map<string, { contact: Contact; count: number }>()
+  for (const conversation of conversations) {
+    for (const participant of conversation.participants) {
+      const addr = participant.addr.trim().toLowerCase()
+      if (!addr || addr === me.email) continue
+      const existing = freq.get(addr)
+      if (existing) existing.count += 1
+      else freq.set(addr, { contact: { name: participant.name, addr: participant.addr }, count: 1 })
+    }
+  }
+  const needle = query.trim().toLowerCase()
+  return [...freq.values()]
+    .filter(({ contact }) => !needle || `${contact.name} ${contact.addr}`.toLowerCase().includes(needle))
+    .sort((left, right) => right.count - left.count)
+    .slice(0, 8)
+    .map(({ contact }) => contact)
+}
+
 function matches(c: Conversation, query: string) {
   const labelText = c.labelIds.map((id) => labels.find((l) => l.id === id)?.name ?? id).join(' ').toLowerCase()
   const haystack = `${c.from.name} ${c.from.addr} ${c.subject} ${c.snippet} ${labelText}`.toLowerCase()

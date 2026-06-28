@@ -5,7 +5,7 @@
 // type-to-create for labels and folders. Own keydown listener while mounted.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
-  PhArchive, PhBellSlash, PhCalendarBlank, PhClock, PhCoffee, PhFolderSimple, PhPlus, PhSunHorizon, PhTag,
+  PhArchive, PhBellSlash, PhCalendarBlank, PhClock, PhClockClockwise, PhCoffee, PhFolderSimple, PhPlus, PhProhibit, PhSunHorizon, PhTag, PhTrash,
 } from '@phosphor-icons/vue'
 import { useMailShell } from '../../composables/useMailShell'
 
@@ -20,6 +20,8 @@ type Item = {
 }
 
 const target = computed(() => s.selectedThread.value ?? s.selectedConversation.value)
+// In Visual mode the menu acts over the whole selection instead of one thread.
+const batch = computed(() => s.visualMode.value && s.selectedCount.value > 0)
 
 // ---- snooze presets (computed against real clock) ----
 function at(base: Date, h: number, m = 0) { const d = new Date(base); d.setHours(h, m, 0, 0); return d }
@@ -31,7 +33,8 @@ const snoozeItems = computed<Item[]>(() => {
   const sat = new Date(now); sat.setDate(now.getDate() + ((6 - now.getDay() + 7) % 7 || 7)); const weekend = at(sat, 9)
   const mon = new Date(now); mon.setDate(now.getDate() + ((8 - now.getDay()) % 7 || 7)); const nextWeek = at(mon, 8)
   const mk = (id: string, label: string, key: string, icon: any, when: Date): Item => ({
-    id, label, key, icon, kind: 'leaf', hint: fmt(when), run: () => s.snoozeThread(when.toISOString()),
+    id, label, key, icon, kind: 'leaf', hint: fmt(when),
+    run: () => batch.value ? s.snoozeSelection(when.toISOString()) : s.snoozeThread(when.toISOString()),
   })
   return [
     mk('later', 'Later today', '1', PhCoffee, later),
@@ -42,17 +45,20 @@ const snoozeItems = computed<Item[]>(() => {
 })
 
 const verbs = computed<Item[]>(() => [
-  { id: 'archive', label: 'Archive', kind: 'leaf', key: 'e', icon: PhArchive, run: () => s.archiveSelected() },
+  ...(s.snoozedActive.value && !batch.value ? [{ id: 'unsnooze', label: 'Unsnooze now', kind: 'leaf' as Kind, key: 'w', icon: PhClockClockwise, run: () => s.unsnoozeThread() }] : []),
+  { id: 'archive', label: 'Archive', kind: 'leaf', key: 'e', icon: PhArchive, run: () => batch.value ? s.archiveSelection() : s.archiveSelected() },
   { id: 'snooze', label: 'Snooze', kind: 'branch', key: 's', icon: PhClock, mode: 'snooze' },
   { id: 'label', label: 'Add label', kind: 'branch', key: 'l', icon: PhTag, mode: 'label' },
   { id: 'move', label: 'Move to folder', kind: 'branch', key: 'm', icon: PhFolderSimple, mode: 'move' },
-  { id: 'mute', label: 'Mute thread', kind: 'leaf', key: 'u', icon: PhBellSlash, run: () => s.toggleRead() },
+  { id: 'mute', label: batch.value ? 'Toggle read' : 'Mute thread', kind: 'leaf', key: 'u', icon: PhBellSlash, run: () => batch.value ? s.toggleSelectionRead() : s.toggleRead() },
+  { id: 'delete', label: 'Delete', kind: 'leaf', key: '#', icon: PhTrash, run: () => batch.value ? s.deleteSelection() : s.deleteThread() },
+  ...(batch.value ? [] : [{ id: 'spam', label: 'Report spam', kind: 'leaf' as Kind, key: '!', icon: PhProhibit, run: () => s.reportSpam() }]),
 ])
 
 const labelItems = computed<Item[]>(() =>
   s.labels.value.map((l, i): Item => ({
     id: `label-${l.id}`, label: l.name, kind: 'leaf', key: i < 9 ? String(i + 1) : undefined,
-    icon: PhTag, swatch: l.swatch, run: () => s.applyLabel(l.id),
+    icon: PhTag, swatch: l.swatch, run: () => batch.value ? s.labelSelection(l.id) : s.applyLabel(l.id),
   })))
 
 // Move targets: every mailbox except the one we're already in and draft/sent.
@@ -61,7 +67,7 @@ const folderItems = computed<Item[]>(() =>
     .filter((m) => m.id !== s.activeMailbox.value && m.role !== 'drafts' && m.role !== 'sent')
     .map((m, i): Item => ({
       id: `move-${m.id}`, label: m.name, kind: 'leaf', key: i < 9 ? String(i + 1) : undefined,
-      icon: PhFolderSimple, run: () => s.moveThreadTo(m.id),
+      icon: PhFolderSimple, run: () => batch.value ? s.moveSelectionTo(m.id) : s.moveThreadTo(m.id),
     })))
 
 // ---- runtime state ----
@@ -88,8 +94,8 @@ function subseq(text: string, q: string): boolean {
 }
 function createRows(): Item[] {
   const name = query.value.trim()
-  if (mode.value === 'label') return [{ id: 'cl', label: `Create label “${name}”`, kind: 'create', createKind: 'label', icon: PhPlus, swatch: 'var(--accent)', run: () => s.createLabelAndApply(name) }]
-  if (mode.value === 'move') return [{ id: 'cf', label: `Create folder “${name}”`, kind: 'create', createKind: 'folder', icon: PhPlus, run: () => s.createFolderAndMove(name) }]
+  if (mode.value === 'label') return [{ id: 'cl', label: `Create label “${name}”`, kind: 'create', createKind: 'label', icon: PhPlus, swatch: 'var(--accent)', run: () => batch.value ? s.createLabelAndLabelSelection(name) : s.createLabelAndApply(name) }]
+  if (mode.value === 'move') return [{ id: 'cf', label: `Create folder “${name}”`, kind: 'create', createKind: 'folder', icon: PhPlus, run: () => batch.value ? s.createFolderAndMoveSelection(name) : s.createFolderAndMove(name) }]
   return []
 }
 const visible = computed<Item[]>(() => {
@@ -149,11 +155,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
 
 <template>
   <div class="cmdmenu-backdrop" @click.self="close()">
-    <div class="cmdmenu">
+    <div class="cmdmenu" role="dialog" aria-modal="true" aria-label="Command menu">
       <div class="cm-head">
         <span class="kbadge">{{ mode === 'root' ? 'leader' : mode }}</span>
         <span class="cm-crumb">{{ crumb }}</span>
-        <span v-if="target" class="cm-target">{{ target.from.name }} · {{ target.subject }}</span>
+        <span v-if="batch" class="cm-target">{{ s.selectedCount.value }} selected</span>
+        <span v-else-if="target" class="cm-target">{{ target.from.name }} · {{ target.subject }}</span>
         <span v-if="searching" class="cm-query">{{ query }}<i class="caret" /></span>
       </div>
       <div class="cm-cells">
@@ -175,7 +182,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
         <p v-if="!visible.length" class="cm-empty">No matches — type a name to create one</p>
       </div>
       <footer class="cm-foot">
-        <span><kbd>{{ mode === 'root' ? 'e s l m u' : '1–9' }}</kbd> direct</span>
+        <span><kbd>{{ mode === 'root' ? 'e s l m u # !' : '1–9' }}</kbd> direct</span>
         <span><kbd>/</kbd> search</span>
         <span><kbd>↑↓</kbd> move</span>
         <span><kbd>⌫</kbd> back</span>

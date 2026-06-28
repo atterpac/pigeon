@@ -12,31 +12,31 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as email$0 from "../../internal/email/models.js";
+import * as email$0 from "../../email/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as model$0 from "../../internal/model/models.js";
+import * as model$0 from "../../model/models.js";
 
 export function ApplyLabels(acct: email$0.Account, ids: email$0.MessageID[], add: email$0.LabelID[], remove: email$0.LabelID[]): $CancellablePromise<void> {
-    return $Call.ByID(92280299, acct, ids, add, remove);
+    return $Call.ByID(869874707, acct, ids, add, remove);
 }
 
 export function Archive(acct: email$0.Account, ids: email$0.MessageID[]): $CancellablePromise<void> {
-    return $Call.ByID(1537409670, acct, ids);
+    return $Call.ByID(1139453646, acct, ids);
 }
 
 export function Delete(acct: email$0.Account, ids: email$0.MessageID[]): $CancellablePromise<void> {
-    return $Call.ByID(1671887731, acct, ids);
+    return $Call.ByID(2953001147, acct, ids);
 }
 
 export function MarkRead(acct: email$0.Account, ids: email$0.MessageID[], read: boolean): $CancellablePromise<void> {
-    return $Call.ByID(3891213769, acct, ids, read);
+    return $Call.ByID(781568289, acct, ids, read);
 }
 
 export function Move(acct: email$0.Account, ids: email$0.MessageID[], dst: email$0.LabelID): $CancellablePromise<void> {
-    return $Call.ByID(3999181973, acct, ids, dst);
+    return $Call.ByID(3686961005, acct, ids, dst);
 }
 
 export function Star(acct: email$0.Account, ids: email$0.MessageID[], on: boolean): $CancellablePromise<void> {
-    return $Call.ByID(1456832744, acct, ids, on);
+    return $Call.ByID(659581504, acct, ids, on);
 }

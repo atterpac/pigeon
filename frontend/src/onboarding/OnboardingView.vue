@@ -1,11 +1,16 @@
 <script setup lang="ts">
 // Account-setup phase, extracted from App.vue. Re-tokened, otherwise unchanged.
+import { computed } from 'vue'
 import { useMailShell } from '../composables/useMailShell'
+import { useSettings } from '../composables/useSettings'
+import { pigeonLogoForTheme } from '../theme/logo'
 import { PhArrowRight } from '@phosphor-icons/vue'
 
 defineProps<{ devTools?: boolean }>()
 const emit = defineEmits<{ (e: 'open-sandbox'): void }>()
 const s = useMailShell()
+const settings = useSettings()
+const logoSrc = computed(() => pigeonLogoForTheme(settings.theme))
 </script>
 
 <template>
@@ -13,8 +18,8 @@ const s = useMailShell()
     <section class="setup-panel">
       <div class="setup-copy">
         <span class="setup-brand">
-          <img class="setup-beak" src="/chirp-core.svg" alt="" aria-hidden="true" />
-          <span class="setup-wordmark">chirp</span>
+          <img class="setup-logo" :src="logoSrc" alt="" aria-hidden="true" />
+          <span class="setup-wordmark">pigeon</span>
         </span>
         <h1>Set up your account</h1>
         <p>Connect an inbox to start syncing mail locally.</p>
@@ -26,11 +31,7 @@ const s = useMailShell()
       </div>
 
       <form class="setup-form" @submit.prevent="s.submitOnboarding()">
-        <div class="setup-methods triple" role="radiogroup" aria-label="Account type">
-          <button type="button" :class="{ active: s.setup.value.method === 'google' }" @click="s.setup.value.method = 'google'">
-            <strong>Google</strong>
-            <span>OAuth sign-in</span>
-          </button>
+        <div class="setup-methods" role="radiogroup" aria-label="Account type">
           <button type="button" :class="{ active: s.setup.value.method === 'appPassword' }" @click="s.setup.value.method = 'appPassword'">
             <strong>Gmail</strong>
             <span>App password</span>
@@ -73,7 +74,7 @@ const s = useMailShell()
 
         <footer>
           <button class="primary-action" type="submit" :disabled="s.setupBusy.value">
-            {{ s.setupBusy.value ? 'Connecting...' : s.setup.value.method === 'google' ? 'Continue with Google' : 'Add account' }}
+            {{ s.setupBusy.value ? 'Connecting...' : 'Add account' }}
           </button>
           <span>{{ s.configuredAccounts.value.length }} configured</span>
         </footer>

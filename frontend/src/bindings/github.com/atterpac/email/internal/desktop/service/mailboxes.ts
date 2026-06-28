@@ -12,41 +12,41 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as email$0 from "../../internal/email/models.js";
+import * as email$0 from "../../email/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as model$0 from "../../internal/model/models.js";
+import * as model$0 from "../../model/models.js";
 
 export function Accounts(): $CancellablePromise<email$0.Account[]> {
-    return $Call.ByID(1590808220).then(($result: any) => {
+    return $Call.ByID(2649854532).then(($result: any) => {
         return $$createType1($result);
     });
 }
 
 export function CreateMailbox(acct: email$0.Account, name: string): $CancellablePromise<email$0.Mailbox> {
-    return $Call.ByID(2622389220, acct, name).then(($result: any) => {
+    return $Call.ByID(71426220, acct, name).then(($result: any) => {
         return $$createType2($result);
     });
 }
 
 export function DeleteMailbox(acct: email$0.Account, id: email$0.LabelID): $CancellablePromise<void> {
-    return $Call.ByID(104886341, acct, id);
+    return $Call.ByID(3473453501, acct, id);
 }
 
 export function Mailboxes(acct: email$0.AccountID): $CancellablePromise<email$0.Mailbox[]> {
-    return $Call.ByID(1188819028, acct).then(($result: any) => {
+    return $Call.ByID(2244307836, acct).then(($result: any) => {
         return $$createType3($result);
     });
 }
 
 export function RenameMailbox(acct: email$0.Account, id: email$0.LabelID, newName: string): $CancellablePromise<email$0.Mailbox> {
-    return $Call.ByID(2941374710, acct, id, newName).then(($result: any) => {
+    return $Call.ByID(132653214, acct, id, newName).then(($result: any) => {
         return $$createType2($result);
     });
 }
 
 export function SetMailboxIcon(acct: email$0.AccountID, id: email$0.LabelID, icon: string, weight: string, color: string): $CancellablePromise<email$0.Mailbox> {
-    return $Call.ByID(2343372113, acct, id, icon, weight, color).then(($result: any) => {
+    return $Call.ByID(2867970905, acct, id, icon, weight, color).then(($result: any) => {
         return $$createType2($result);
     });
 }

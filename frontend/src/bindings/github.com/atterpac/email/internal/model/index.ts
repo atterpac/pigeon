@@ -5,6 +5,7 @@ export {
     Account,
     Address,
     Category,
+    Contact,
     Draft,
     Flag,
     Kind,

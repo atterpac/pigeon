@@ -1,8 +1,9 @@
-import * as Mailboxes from '../bindings/github.com/atterpac/email/cmd/email/mailboxes'
-import * as Messages from '../bindings/github.com/atterpac/email/cmd/email/messages'
-import * as Mutations from '../bindings/github.com/atterpac/email/cmd/email/mutations'
-import * as Compose from '../bindings/github.com/atterpac/email/cmd/email/compose'
-import * as Snooze from '../bindings/github.com/atterpac/email/cmd/email/snooze'
+import * as Mailboxes from '../bindings/github.com/atterpac/email/internal/desktop/service/mailboxes'
+import * as Messages from '../bindings/github.com/atterpac/email/internal/desktop/service/messages'
+import * as Mutations from '../bindings/github.com/atterpac/email/internal/desktop/service/mutations'
+import * as Compose from '../bindings/github.com/atterpac/email/internal/desktop/service/compose'
+import * as Snooze from '../bindings/github.com/atterpac/email/internal/desktop/service/snooze'
+import * as ContactsBinding from '../bindings/github.com/atterpac/email/internal/desktop/service/contacts'
 import { Address as BindingAddress, Flag, Outgoing } from '../bindings/github.com/atterpac/email/internal/model/models'
 import type {
   Account as BindingAccount,
@@ -11,7 +12,9 @@ import type {
   Part as BindingPart,
   ThreadListItem,
 } from '../bindings/github.com/atterpac/email/internal/email/models'
-import type { Account, Address, Category, ComposeDraft, Conversation, Label, Mailbox, MailClient, Thread, ThreadMessage } from './types'
+import type { Account, Address, Category, ComposeDraft, Contact, Conversation, Label, Mailbox, MailClient, MessageAttachment, Thread, ThreadMessage } from './types'
+import { stripSignature } from './drafts'
+import { renderMarkdown } from './format'
 
 const FLAG_SEEN = Flag.FlagSeen
 const FLAG_FLAGGED = Flag.FlagFlagged
@@ -112,8 +115,13 @@ class WailsMailClient implements MailClient {
     return conversationsFromMessages(messages)
   }
 
+  async searchServer(query: string): Promise<Conversation[]> {
+    const messages = await Messages.SearchServer(this.account, query, 100)
+    return conversationsFromMessages(messages)
+  }
+
   async getThread(threadId: string): Promise<Thread> {
-    const messages = await Messages.ThreadMessages(this.account.ID, threadId)
+    const messages = await Messages.ThreadMessagesWithBodies(this.account, threadId)
     const threadMessages = await Promise.all(messages.map((message, index) => this.normalizeThreadMessage(message, index === messages.length - 1)))
     const conversation = conversationFromThreadMessages(threadId, this.account.ID, threadMessages, messages)
     if (conversation.unread) {
@@ -132,8 +140,41 @@ class WailsMailClient implements MailClient {
     await Snooze.Snooze(this.account, await this.threadMessageIds(threadId), until ?? fallback)
   }
 
+  // Builds the Snoozed view: the backend records (message, until) pairs, so we
+  // fetch each message's envelope, group by thread, and carry the earliest wake
+  // time onto the conversation row.
+  async listSnoozed(): Promise<Conversation[]> {
+    const entries = await Snooze.Snoozed(this.account.ID)
+    if (!entries.length) return []
+    const byThread = new Map<string, { messages: BindingMessage[]; until: string }>()
+    for (const entry of entries) {
+      try {
+        const message = await Messages.Message(this.account.ID, entry.Message)
+        const threadId = message.Thread || message.ID
+        const until = dateToISO(entry.Until)
+        const group = byThread.get(threadId) ?? { messages: [], until }
+        group.messages.push(message)
+        if (Date.parse(until) < Date.parse(group.until)) group.until = until
+        byThread.set(threadId, group)
+      } catch (error) {
+        console.warn('snoozed message load failed', entry.Message, error)
+      }
+    }
+    return [...byThread.entries()]
+      .map(([threadId, group]) => ({ ...conversationFromMessages(threadId, group.messages), snoozedUntil: group.until }))
+      .sort((left, right) => Date.parse(left.snoozedUntil!) - Date.parse(right.snoozedUntil!))
+  }
+
+  async unsnooze(threadId: string): Promise<void> {
+    await Snooze.Unsnooze(this.account, await this.threadMessageIds(threadId))
+  }
+
   async moveThread(threadId: string, mailboxId: string): Promise<void> {
     await Mutations.Move(this.account, await this.threadMessageIds(threadId), mailboxId)
+  }
+
+  async deleteThread(threadId: string): Promise<void> {
+    await Mutations.Delete(this.account, await this.threadMessageIds(threadId))
   }
 
   async applyLabel(threadId: string, labelId: string): Promise<void> {
@@ -157,23 +198,74 @@ class WailsMailClient implements MailClient {
     await Mutations.MarkRead(this.account, await this.threadMessageIds(threadId), read)
   }
 
+  async searchContacts(query: string): Promise<Contact[]> {
+    const contacts = await ContactsBinding.Search(this.account.ID, query, 8)
+    return contacts.map((contact) => normalizeAddress(contact))
+  }
+
   async saveDraft(draft: ComposeDraft): Promise<ComposeDraft> {
     const id = await Compose.SaveDraft(this.account.ID, draft.id, outgoingFromDraft(this.account, draft))
     return { ...draft, id, updatedAt: new Date().toISOString() }
   }
 
-  async sendDraft(draft: ComposeDraft): Promise<void> {
-    await Compose.Send(this.account, outgoingFromDraft(this.account, draft))
+  async sendDraft(draft: ComposeDraft, holdSeconds = 0): Promise<string> {
+    const opId = await Compose.Send(this.account, outgoingFromDraft(this.account, draft), holdSeconds)
     if (draft.id) await Compose.DiscardDraft(this.account.ID, draft.id).catch(() => undefined)
+    return opId ? String(opId) : ''
+  }
+
+  async cancelSend(opId: string): Promise<void> {
+    await Compose.CancelSend(this.account, Number(opId))
   }
 
   async discardDraft(draftId: string): Promise<void> {
     await Compose.DiscardDraft(this.account.ID, draftId)
   }
 
+  async saveAttachment(messageId: string, index: number, prompt: boolean): Promise<string> {
+    return Messages.SaveAttachment(this.account, messageId, index, prompt)
+  }
+
+  // Batch triage: collect the member message ids across every selected thread,
+  // then issue a single mutation. One round of ThreadMessages lookups runs in
+  // parallel.
+  async archiveThreads(threadIds: string[]): Promise<void> {
+    await Mutations.Archive(this.account, await this.threadsMessageIds(threadIds))
+  }
+
+  async deleteThreads(threadIds: string[]): Promise<void> {
+    await Mutations.Delete(this.account, await this.threadsMessageIds(threadIds))
+  }
+
+  async moveThreads(threadIds: string[], mailboxId: string): Promise<void> {
+    await Mutations.Move(this.account, await this.threadsMessageIds(threadIds), mailboxId)
+  }
+
+  async labelThreads(threadIds: string[], labelId: string): Promise<void> {
+    await Mutations.ApplyLabels(this.account, await this.threadsMessageIds(threadIds), [labelId], [])
+  }
+
+  async starThreads(threadIds: string[], on: boolean): Promise<void> {
+    await Mutations.Star(this.account, await this.threadsMessageIds(threadIds), on)
+  }
+
+  async markThreadsRead(threadIds: string[], read: boolean): Promise<void> {
+    await Mutations.MarkRead(this.account, await this.threadsMessageIds(threadIds), read)
+  }
+
+  async snoozeThreads(threadIds: string[], until?: string): Promise<void> {
+    const fallback = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    await Snooze.Snooze(this.account, await this.threadsMessageIds(threadIds), until ?? fallback)
+  }
+
   private async threadMessageIds(threadId: string) {
     const messages = await Messages.ThreadMessages(this.account.ID, threadId)
     return messages.map((message) => message.ID)
+  }
+
+  private async threadsMessageIds(threadIds: string[]) {
+    const groups = await Promise.all(threadIds.map((id) => this.threadMessageIds(id)))
+    return groups.flat()
   }
 
   private async normalizeThreadMessage(message: BindingMessage, expanded: boolean): Promise<ThreadMessage> {
@@ -184,6 +276,7 @@ class WailsMailClient implements MailClient {
         Charset: 'utf-8',
         Disposition: 'inline',
         Filename: '',
+        ContentID: '',
         Size: 0,
         Content: `Body failed to load: ${errorMessage(error)}`,
         BlobRef: '',
@@ -205,6 +298,8 @@ class WailsMailClient implements MailClient {
       expanded,
       rfcMessageId: message.RFCMessageID,
       references: message.References,
+      attachments: attachmentsFromParts(parts),
+      inlineImages: inlineImagesFromParts(parts),
     }
   }
 }
@@ -328,6 +423,7 @@ function conversationFromThreadMessages(threadId: string, accountId: string, thr
 }
 
 function outgoingFromDraft(account: BindingAccount, draft: ComposeDraft): Outgoing {
+  const html = htmlFromDraft(draft)
   return new Outgoing({
     From: new BindingAddress({ Name: account.Name, Addr: account.Email }),
     To: draft.to.map(bindingAddress),
@@ -335,6 +431,7 @@ function outgoingFromDraft(account: BindingAccount, draft: ComposeDraft): Outgoi
     Bcc: draft.bcc.map(bindingAddress),
     Subject: draft.subject,
     Text: draft.body,
+    HTML: html,
     InReplyTo: draft.inReplyTo ?? '',
     References: draft.references ?? [],
     Thread: draft.threadId ?? '',
@@ -342,8 +439,21 @@ function outgoingFromDraft(account: BindingAccount, draft: ComposeDraft): Outgoi
       Filename: attachment.filename,
       ContentType: attachment.contentType ?? 'application/octet-stream',
       Content: attachment.content ?? '',
+      ContentID: attachment.contentId ?? '',
     })),
   })
+}
+
+function htmlFromDraft(draft: ComposeDraft) {
+  // Inline images require an HTML body (they're referenced via cid:), so emit
+  // HTML whenever there's a signature OR an embedded image — not only the former.
+  const hasInline = draft.attachments.some((attachment) => attachment.contentId)
+  if (!draft.signatureHtml && !hasInline) return ''
+  const bodyHtml = renderMarkdown(stripSignature(draft.body))
+  const signature = draft.signatureHtml
+    ? `<div style="margin-top:18px;color:#555;font:13px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">--<br>${draft.signatureHtml}</div>`
+    : ''
+  return `${bodyHtml}${signature}`
 }
 
 function bodyParagraphs(parts: BindingPart[], fallback: string): string[] {
@@ -353,6 +463,35 @@ function bodyParagraphs(parts: BindingPart[], fallback: string): string[] {
     .map((part) => part.ContentType.includes('html') ? stripHtml(contentToString(part.Content)) : contentToString(part.Content))
     .find((content) => content.trim())
   return splitBody(text || fallback || '(No message body loaded.)')
+}
+
+// Surface attachment-part metadata for display. Bytes are NOT carried here — the
+// download is performed backend-side by SaveAttachment, which re-derives the
+// same attachment ordering (parts with Disposition === 'attachment'), so `index`
+// lines up 1:1 on both ends.
+function attachmentsFromParts(parts: BindingPart[]): MessageAttachment[] {
+  return parts
+    .filter((part) => part.Disposition === 'attachment')
+    .map((part, index) => ({
+      filename: part.Filename || 'attachment',
+      contentType: part.ContentType || 'application/octet-stream',
+      size: part.Size,
+      index,
+    }))
+}
+
+// Map cid → inline image (base64) for parts that carry a Content-ID. The Wails
+// runtime already delivers part.Content as a base64 string, so it drops straight
+// into a data: URL. Used to resolve cid: refs in the HTML body.
+function inlineImagesFromParts(parts: BindingPart[]): Record<string, { contentType: string; content: string }> {
+  const map: Record<string, { contentType: string; content: string }> = {}
+  for (const part of parts) {
+    const cid = (part as { ContentID?: string }).ContentID
+    if (cid && typeof part.Content === 'string' && part.Content) {
+      map[cid] = { contentType: part.ContentType || 'application/octet-stream', content: part.Content }
+    }
+  }
+  return map
 }
 
 function htmlBody(parts: BindingPart[]): string | undefined {

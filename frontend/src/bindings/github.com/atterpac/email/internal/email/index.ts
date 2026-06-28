@@ -3,6 +3,7 @@
 
 export {
     Account,
+    Contact,
     Draft,
     Mailbox,
     Message,

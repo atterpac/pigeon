@@ -12,37 +12,50 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as email$0 from "../../internal/email/models.js";
+import * as email$0 from "../../email/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as model$0 from "../../internal/model/models.js";
+import * as model$0 from "../../model/models.js";
+
+/**
+ * CancelSend recalls a held send by op id before its hold elapses. Returns false
+ * if it was already delivered.
+ */
+export function CancelSend(acct: email$0.Account, opID: number): $CancellablePromise<boolean> {
+    return $Call.ByID(3882850364, acct, opID);
+}
 
 export function DiscardDraft(acct: email$0.AccountID, id: string): $CancellablePromise<void> {
-    return $Call.ByID(1995142285, acct, id);
+    return $Call.ByID(3062050629, acct, id);
 }
 
 export function Draft(acct: email$0.AccountID, id: string): $CancellablePromise<email$0.Draft> {
-    return $Call.ByID(2003027279, acct, id).then(($result: any) => {
+    return $Call.ByID(1762555335, acct, id).then(($result: any) => {
         return $$createType0($result);
     });
 }
 
 export function Drafts(acct: email$0.AccountID): $CancellablePromise<email$0.Draft[]> {
-    return $Call.ByID(772767092, acct).then(($result: any) => {
+    return $Call.ByID(365120092, acct).then(($result: any) => {
         return $$createType1($result);
     });
 }
 
 export function SaveDraft(acct: email$0.AccountID, id: string, out: email$0.Outgoing): $CancellablePromise<string> {
-    return $Call.ByID(4235329584, acct, id, out);
+    return $Call.ByID(2499005864, acct, id, out);
 }
 
-export function Send(acct: email$0.Account, out: email$0.Outgoing): $CancellablePromise<boolean> {
-    return $Call.ByID(1910189506, acct, out);
+/**
+ * Send queues an outbound message with an undo-send hold of holdSeconds. With
+ * holdSeconds<=0 it delivers immediately and returns 0; otherwise it returns the
+ * outbox op id so the frontend can CancelSend within the window.
+ */
+export function Send(acct: email$0.Account, out: email$0.Outgoing, holdSeconds: number): $CancellablePromise<number> {
+    return $Call.ByID(431256282, acct, out, holdSeconds);
 }
 
 export function SendDraft(acct: email$0.Account, id: string): $CancellablePromise<boolean> {
-    return $Call.ByID(4094153569, acct, id);
+    return $Call.ByID(371104489, acct, id);
 }
 
 // Private type creation functions

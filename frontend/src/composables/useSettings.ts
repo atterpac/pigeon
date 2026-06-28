@@ -3,6 +3,13 @@
 import { reactive, watch } from 'vue'
 import { applyTheme, getTheme } from '../theme/themes'
 
+export interface EmailSignature {
+  id: string
+  name: string
+  body: string
+  html?: string
+}
+
 export interface Settings {
   theme: string
   compose: 'centered' | 'docked' | 'side' | 'fullscreen' | 'minimal' | 'split'
@@ -16,6 +23,25 @@ export interface Settings {
   hiddenMailboxIds: string[]
   // How often the backend polls for new mail, in seconds.
   pollIntervalSeconds: number
+  // Undo-send window in seconds: a sent message is parked in the outbox this
+  // long before delivery, cancellable via the toast / `U`. 0 = send immediately.
+  sendUndoSeconds: number
+  // Named, persisted searches surfaced in the sidebar.
+  savedSearches: { name: string; query: string }[]
+  // Desktop notification preferences (pushed to the backend's new-mail handler).
+  notify: {
+    mode: 'all' | 'inbox' | 'none'
+    mutedSenders: string[]
+    quietHours: { enabled: boolean; from: string; to: string }
+  }
+  // Block remote images in HTML email until explicitly loaded (privacy: stops
+  // tracking pixels firing on open).
+  blockRemoteImages: boolean
+  // Per-account email signature, keyed by account id. Appended to new messages
+  // and replies.
+  signatures: Record<string, string>
+  signatureBooks: Record<string, EmailSignature[]>
+  defaultSignatureIds: Record<string, string>
 }
 
 const STORAGE_KEY = 'mail.settings'
@@ -31,6 +57,13 @@ const defaults: Settings = {
   navCollapsed: false,
   hiddenMailboxIds: [],
   pollIntervalSeconds: 60,
+  sendUndoSeconds: 5,
+  savedSearches: [],
+  notify: { mode: 'all', mutedSenders: [], quietHours: { enabled: false, from: '22:00', to: '07:00' } },
+  blockRemoteImages: true,
+  signatures: {},
+  signatureBooks: {},
+  defaultSignatureIds: {},
 }
 
 function load(): Partial<Settings> {

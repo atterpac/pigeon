@@ -63,7 +63,10 @@ defineExpose({ scrollThread, focusReply })
       <header class="thread-header">
         <button class="mobile-back" type="button" @click.stop="emit('back-to-list')"><PhArrowLeft :size="15" /> Inbox</button>
         <div class="thread-title">
-          <div class="thread-path"><PhTray :size="14" /> ~/{{ activeMailboxName.toLowerCase() }}/{{ focusedSenderPath }}</div>
+          <div class="thread-path">
+            <PhTray :size="14" />
+            <span>~/{{ activeMailboxName.toLowerCase() }}/{{ focusedSenderPath }}</span>
+          </div>
           <h1>{{ s.selectedThread.value.subject }}</h1>
           <p>focused on <b>{{ focusedSenderName }}</b><span v-if="focusedSenderEmail"> · {{ focusedSenderEmail }}</span></p>
         </div>

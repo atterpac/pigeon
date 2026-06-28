@@ -6,8 +6,10 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 
 const groups: Array<{ title: string; keys: Array<[string, string]> }> = [
   { title: 'Navigation', keys: [['j / k', 'move down / up'], ['{count}j', 'move by count'], ['gg / G', 'first / last'], ['↵', 'open thread'], ['esc', 'close / cancel']] },
-  { title: 'Actions', keys: [['space', 'command menu'], ['c', 'compose'], ['e / dd', 'archive'], ['s', 'snooze'], ['*', 'star'], ['u', 'toggle unread'], ['r / a / f', 'reply / all / forward']] },
+  { title: 'Actions', keys: [['space', 'command menu'], ['c', 'compose'], ['e / dd', 'archive'], ['s', 'snooze'], ['#', 'delete'], ['!', 'report spam'], ['*', 'star'], ['u', 'toggle unread'], ['U', 'undo last action'], ['r / a / f', 'reply / all / forward']] },
   { title: 'Command line', keys: [['/', 'search'], [':', 'ex-command'], [': archive', 'archive selected'], [': label x', 'open label x'], ['⌘K', 'search'], ['⌘↵', 'send']] },
+  { title: 'Snoozed view', keys: [['u', 'unsnooze (wake now)'], ['↵', 'open thread'], ['esc', 'back to mailbox']] },
+  { title: 'Visual (multi-select)', keys: [['v', 'enter / exit visual'], ['j / k', 'move cursor'], ['space', 'toggle row'], ['V', 'select all / none'], ['e # s * u', 'archive · del · snooze · star · read'], ['↵', 'command menu (selection)'], ['esc', 'exit']] },
 ]
 </script>
 

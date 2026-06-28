@@ -27,6 +27,16 @@ export type AccountID = model$0.AccountID;
 /**
  * Re-exported domain types so callers depend only on this package.
  */
+export const Contact = model$0.Contact;
+
+/**
+ * Re-exported domain types so callers depend only on this package.
+ */
+export type Contact = model$0.Contact;
+
+/**
+ * Re-exported domain types so callers depend only on this package.
+ */
 export const Draft = model$0.Draft;
 
 /**

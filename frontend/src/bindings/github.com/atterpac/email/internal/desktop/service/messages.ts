@@ -12,51 +12,73 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as email$0 from "../../internal/email/models.js";
+import * as email$0 from "../../email/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as model$0 from "../../internal/model/models.js";
+import * as model$0 from "../../model/models.js";
 
 export function Attachments(acct: email$0.Account, id: email$0.MessageID): $CancellablePromise<email$0.Part[]> {
-    return $Call.ByID(1751643258, acct, id).then(($result: any) => {
+    return $Call.ByID(4077772530, acct, id).then(($result: any) => {
         return $$createType1($result);
     });
 }
 
 export function ConversationList(acct: email$0.AccountID, limit: number): $CancellablePromise<email$0.ThreadListItem[]> {
-    return $Call.ByID(2878919967, acct, limit).then(($result: any) => {
+    return $Call.ByID(1360761063, acct, limit).then(($result: any) => {
         return $$createType3($result);
     });
 }
 
 export function MailboxMessages(acct: email$0.AccountID, mailbox: email$0.LabelID, limit: number): $CancellablePromise<email$0.Message[]> {
-    return $Call.ByID(3681257412, acct, mailbox, limit).then(($result: any) => {
+    return $Call.ByID(2540641452, acct, mailbox, limit).then(($result: any) => {
         return $$createType5($result);
     });
 }
 
 export function Message(acct: email$0.AccountID, id: email$0.MessageID): $CancellablePromise<email$0.Message> {
-    return $Call.ByID(2913499527, acct, id).then(($result: any) => {
+    return $Call.ByID(4198233439, acct, id).then(($result: any) => {
         return $$createType4($result);
     });
 }
 
 export function MessageBody(acct: email$0.Account, id: email$0.MessageID): $CancellablePromise<email$0.Part[]> {
-    return $Call.ByID(62689727, acct, id).then(($result: any) => {
+    return $Call.ByID(482377975, acct, id).then(($result: any) => {
         return $$createType1($result);
     });
 }
 
 export function PreloadMailboxBodies(acct: email$0.Account, mailbox: email$0.LabelID, limit: number): $CancellablePromise<number> {
-    return $Call.ByID(1059989683, acct, mailbox, limit);
+    return $Call.ByID(4182744667, acct, mailbox, limit);
 }
 
 export function ReclassifyMailbox(acct: email$0.AccountID, mailbox: email$0.LabelID, limit: number): $CancellablePromise<number> {
-    return $Call.ByID(799274437, acct, mailbox, limit);
+    return $Call.ByID(3026493773, acct, mailbox, limit);
+}
+
+/**
+ * SaveAttachment writes the index-th attachment of a message to disk. When
+ * prompt is true it asks the user where via a native "Save as" dialog;
+ * otherwise it drops the file straight into the user's Downloads directory,
+ * de-duplicating the filename. Returns the written path, or "" if the user
+ * cancels the dialog. The index matches the order of Attachments (parts with
+ * Disposition == "attachment"), which the frontend mirrors 1:1.
+ */
+export function SaveAttachment(acct: email$0.Account, id: email$0.MessageID, index: number, prompt: boolean): $CancellablePromise<string> {
+    return $Call.ByID(686112072, acct, id, index, prompt);
 }
 
 export function Search(acct: email$0.AccountID, query: string, limit: number): $CancellablePromise<email$0.Message[]> {
-    return $Call.ByID(54108748, acct, query, limit).then(($result: any) => {
+    return $Call.ByID(3588713236, acct, query, limit).then(($result: any) => {
+        return $$createType5($result);
+    });
+}
+
+/**
+ * SearchServer runs a server-side search (reaching mail not synced locally),
+ * caches the hits, and returns them newest-first.
+ */
+export function SearchServer(acct: email$0.Account, query: string, limit: number): $CancellablePromise<email$0.Message[]> {
+    return $Call.ByID(1006083799, acct, query, limit).then(($result: any) => {
         return $$createType5($result);
     });
 }
@@ -65,17 +87,23 @@ export function Search(acct: email$0.AccountID, query: string, limit: number): $
  * SyncOnce populates a never-before-opened folder on demand (forward + backfill).
  */
 export function SyncOnce(acct: email$0.Account, mailbox: email$0.LabelID): $CancellablePromise<number> {
-    return $Call.ByID(3883702062, acct, mailbox);
+    return $Call.ByID(434729638, acct, mailbox);
 }
 
 export function ThreadMessages(acct: email$0.AccountID, thread: email$0.ThreadID): $CancellablePromise<email$0.Message[]> {
-    return $Call.ByID(1907660492, acct, thread).then(($result: any) => {
+    return $Call.ByID(293669956, acct, thread).then(($result: any) => {
+        return $$createType5($result);
+    });
+}
+
+export function ThreadMessagesWithBodies(acct: email$0.Account, thread: email$0.ThreadID): $CancellablePromise<email$0.Message[]> {
+    return $Call.ByID(2621716396, acct, thread).then(($result: any) => {
         return $$createType5($result);
     });
 }
 
 export function Threads(acct: email$0.AccountID, limit: number): $CancellablePromise<email$0.Thread[]> {
-    return $Call.ByID(2158448457, acct, limit).then(($result: any) => {
+    return $Call.ByID(1514366945, acct, limit).then(($result: any) => {
         return $$createType7($result);
     });
 }

@@ -23,11 +23,7 @@ async function submit() {
         <button class="modal-close" type="button" @click="emit('close')">esc <PhX :size="12" /></button>
       </header>
       <form class="setup-form" @submit.prevent="submit">
-        <div class="setup-methods triple" role="radiogroup" aria-label="Account type">
-          <button type="button" :class="{ active: s.setup.value.method === 'google' }" @click="s.setup.value.method = 'google'">
-            <strong>Google</strong>
-            <span>OAuth sign-in</span>
-          </button>
+        <div class="setup-methods" role="radiogroup" aria-label="Account type">
           <button type="button" :class="{ active: s.setup.value.method === 'appPassword' }" @click="s.setup.value.method = 'appPassword'">
             <strong>Gmail</strong>
             <span>App password</span>
@@ -58,7 +54,7 @@ async function submit() {
 
         <footer>
           <button class="primary-action" type="submit" :disabled="s.setupBusy.value">
-            {{ s.setupBusy.value ? 'Connecting...' : s.setup.value.method === 'google' ? 'Continue with Google' : 'Add account' }}
+            {{ s.setupBusy.value ? 'Connecting...' : 'Add account' }}
           </button>
           <span>{{ s.configuredAccounts.value.length }} configured</span>
         </footer>

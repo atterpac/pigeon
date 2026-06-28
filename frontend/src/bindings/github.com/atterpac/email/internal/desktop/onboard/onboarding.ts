@@ -3,9 +3,8 @@
 
 /**
  * Onboarding is a Wails service for adding, listing, and removing mail
- * accounts. It is the only path that writes credentials; the rest of the app
- * reads them through the provider factory. Register it alongside the email
- * Client so the frontend onboarding flow can call these methods.
+ * accounts. Register it alongside the email Client so the frontend onboarding
+ * flow can call these methods.
  * @module
  */
 
@@ -15,30 +14,17 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as email$0 from "../../internal/email/models.js";
+import * as email$0 from "../../email/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as model$0 from "../../internal/model/models.js";
+import * as model$0 from "../../model/models.js";
 
 /**
  * AddAppPasswordAccount registers an IMAP/SMTP account authenticated with a
  * password or app password (e.g. a Gmail App Password). No OAuth, no browser.
  */
 export function AddAppPasswordAccount(emailAddr: string, displayName: string, appPassword: string): $CancellablePromise<email$0.Account> {
-    return $Call.ByID(2174294703, emailAddr, displayName, appPassword).then(($result: any) => {
-        return $$createType0($result);
-    });
-}
-
-/**
- * AddGoogleAccount registers a Gmail account via the OAuth loopback flow. It
- * opens the system browser for consent and blocks until the user finishes (or
- * ctx is cancelled), then persists the refresh token, registers the account,
- * and starts background sync. emailAddr is the Gmail address being added and
- * doubles as the account id.
- */
-export function AddGoogleAccount(emailAddr: string, displayName: string): $CancellablePromise<email$0.Account> {
-    return $Call.ByID(1323174484, emailAddr, displayName).then(($result: any) => {
+    return $Call.ByID(534351019, emailAddr, displayName, appPassword).then(($result: any) => {
         return $$createType0($result);
     });
 }
@@ -50,7 +36,7 @@ export function AddGoogleAccount(emailAddr: string, displayName: string): $Cance
  * (STARTTLS) when passed as 0; SMTP host defaults to the IMAP host.
  */
 export function AddIMAPAccount(emailAddr: string, displayName: string, password: string, imapHost: string, imapPort: number, smtpHost: string, smtpPort: number): $CancellablePromise<email$0.Account> {
-    return $Call.ByID(1121486488, emailAddr, displayName, password, imapHost, imapPort, smtpHost, smtpPort).then(($result: any) => {
+    return $Call.ByID(614760876, emailAddr, displayName, password, imapHost, imapPort, smtpHost, smtpPort).then(($result: any) => {
         return $$createType0($result);
     });
 }
@@ -59,7 +45,7 @@ export function AddIMAPAccount(emailAddr: string, displayName: string, password:
  * ListAccounts returns the configured accounts for the settings UI.
  */
 export function ListAccounts(): $CancellablePromise<email$0.Account[]> {
-    return $Call.ByID(1948771863).then(($result: any) => {
+    return $Call.ByID(3651192915).then(($result: any) => {
         return $$createType1($result);
     });
 }
@@ -69,7 +55,7 @@ export function ListAccounts(): $CancellablePromise<email$0.Account[]> {
  * stored credential.
  */
 export function RemoveAccount(id: email$0.AccountID): $CancellablePromise<void> {
-    return $Call.ByID(191899866, id);
+    return $Call.ByID(1900057654, id);
 }
 
 // Private type creation functions

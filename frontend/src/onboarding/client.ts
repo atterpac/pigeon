@@ -1,11 +1,11 @@
-import * as Onboarding from '../bindings/github.com/atterpac/email/cmd/email/onboarding'
+import * as Onboarding from '../bindings/github.com/atterpac/email/internal/desktop/onboard/onboarding'
 import type { Account as BindingAccount } from '../bindings/github.com/atterpac/email/internal/email/models'
 
-export type SetupMethod = 'google' | 'appPassword' | 'imap'
+export type SetupMethod = 'appPassword' | 'imap'
 
 export type ConfiguredAccount = {
   id: string
-  kind: 'imap' | 'gmail'
+  kind: 'imap'
   email: string
   name: string
 }
@@ -30,9 +30,7 @@ export function createOnboardingClient() {
       const email = input.email.trim()
       const displayName = input.displayName.trim()
       let account
-      if (input.method === 'google') {
-        account = await Onboarding.AddGoogleAccount(email, displayName)
-      } else if (input.method === 'imap') {
+      if (input.method === 'imap') {
         account = await Onboarding.AddIMAPAccount(
           email, displayName, input.appPassword,
           input.imapHost.trim(), Number(input.imapPort) || 0,
@@ -52,7 +50,7 @@ export function createOnboardingClient() {
 function normalizeAccount(account: BindingAccount): ConfiguredAccount {
   return {
     id: account.ID,
-    kind: account.Kind === 1 ? 'gmail' : 'imap',
+    kind: 'imap',
     email: account.Email,
     name: account.Name,
   }

@@ -11,11 +11,32 @@
 // @ts-ignore: Unused imports
 import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as notify$0 from "./notify/models.js";
+
+/**
+ * NotifyPrefs reports the current notification preferences.
+ */
+export function NotifyPrefs(): $CancellablePromise<notify$0.Prefs> {
+    return $Call.ByID(1232258931).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
 /**
  * PollIntervalSeconds reports the current background poll interval, in seconds.
  */
 export function PollIntervalSeconds(): $CancellablePromise<number> {
-    return $Call.ByID(2051015435);
+    return $Call.ByID(1068183743);
+}
+
+/**
+ * SetNotifyPrefs pushes the user's notification preferences to the backend; the
+ * new-mail handler consults them before raising a desktop notification.
+ */
+export function SetNotifyPrefs(prefs: notify$0.Prefs): $CancellablePromise<void> {
+    return $Call.ByID(414820467, prefs);
 }
 
 /**
@@ -23,5 +44,8 @@ export function PollIntervalSeconds(): $CancellablePromise<number> {
  * the sync loops. Values below the minimum are clamped server-side.
  */
 export function SetPollInterval(seconds: number): $CancellablePromise<void> {
-    return $Call.ByID(997998774, seconds);
+    return $Call.ByID(1973661226, seconds);
 }
+
+// Private type creation functions
+const $$createType0 = notify$0.Prefs.createFrom;
