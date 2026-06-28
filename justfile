@@ -1,6 +1,8 @@
-bin := "email"
-out := "bin/" + bin
+app := "Pigeon"
+out := "bin/" + app
 pkg := "./cmd/email"
+dev_app := "bin/" + app + ".dev.app"
+release_app := "bin/" + app + ".app"
 
 # goose CLI config (migrations run embedded at runtime; these are for dev)
 export GOOSE_DRIVER := "sqlite3"
@@ -33,7 +35,8 @@ migrate-status:
 
 # build the Vue frontend into frontend/dist and copy it to cmd/email/dist
 build-frontend:
-    cd frontend && pnpm install && pnpm build
+    just bindings
+    cd frontend && if [ ! -d node_modules ]; then pnpm install --frozen-lockfile; fi && pnpm build-only
     rm -rf cmd/email/dist
     cp -r frontend/dist cmd/email/dist
 
@@ -41,14 +44,42 @@ build-frontend:
 bindings:
     cd cmd/email && wails3 generate bindings -ts -d ../../frontend/src/bindings
 
-# build the CLI binary into bin/
+# build the desktop binary into bin/
 build:
-    go build -o {{out}} {{pkg}}
+    CGO_ENABLED=1 go build -buildvcs=false -gcflags=all="-l" -o {{out}} {{pkg}}
 
-# run the CLI harness
-run:
-    just build-frontend
-    go run ./cmd/email
+# generate platform icon assets from build/appicon.png; remove stale Assets.car
+# so macOS loads CFBundleIconFile=icons from icons.icns.
+generate-icons:
+    rm -f build/darwin/Assets.car
+    cd build && wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico
+
+# create the macOS development .app wrapper used by local runs
+bundle-dev: build generate-icons
+    rm -rf {{dev_app}}
+    mkdir -p {{dev_app}}/Contents/MacOS
+    mkdir -p {{dev_app}}/Contents/Resources
+    cp build/darwin/icons.icns {{dev_app}}/Contents/Resources/
+    if [ -f build/darwin/Assets.car ]; then cp build/darwin/Assets.car {{dev_app}}/Contents/Resources/; fi
+    cp {{out}} {{dev_app}}/Contents/MacOS/
+    cp build/darwin/Info.dev.plist {{dev_app}}/Contents/Info.plist
+    codesign --force --deep --sign - {{dev_app}}
+
+# create the macOS release .app wrapper
+bundle: build generate-icons
+    rm -rf {{release_app}}
+    mkdir -p {{release_app}}/Contents/MacOS
+    mkdir -p {{release_app}}/Contents/Resources
+    cp build/darwin/icons.icns {{release_app}}/Contents/Resources/
+    if [ -f build/darwin/Assets.car ]; then cp build/darwin/Assets.car {{release_app}}/Contents/Resources/; fi
+    cp {{out}} {{release_app}}/Contents/MacOS/
+    cp build/darwin/Info.plist {{release_app}}/Contents/Info.plist
+    codesign --force --deep --sign - {{release_app}}
+
+# run the macOS app bundle; required for notifications because macOS reads
+# CFBundleIdentifier from the app bundle, not from a bare `go run` process.
+run: build-frontend bundle-dev
+    {{dev_app}}/Contents/MacOS/{{app}}
 
 # compile everything (no binary)
 check:
