@@ -96,7 +96,7 @@ var errDropOp = errors.New("drop op")
 
 // runOp executes a single outbox op against the provider.
 func (e *Engine) runOp(ctx context.Context, p provider.Provider, op store.Op) error {
-	switch op.Op {
+	switch op.Kind {
 	case OpSend:
 		var pl sendPayload
 		if err := json.Unmarshal(op.Payload, &pl); err != nil {
