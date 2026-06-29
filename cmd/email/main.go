@@ -1,11 +1,15 @@
+// Command email runs the Pigeon desktop client.
 package main
 
 import (
 	"context"
 	"embed"
+	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
@@ -22,15 +26,12 @@ import (
 var assets embed.FS
 
 func main() {
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	dir, err := os.UserConfigDir()
+	dir, err := configDir()
 	if err != nil {
-		log.Fatalf("locate config dir: %v", err)
-	}
-	dir = filepath.Join(dir, "email")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		log.Fatalf("create config dir: %v", err)
+		log.Fatalf("config dir: %v", err)
 	}
 
 	mailApp, err := desktop.NewApp(ctx, filepath.Join(dir, "mail.db"))
@@ -40,21 +41,45 @@ func main() {
 	// mailApp is closed by desktop.Lifecycle.ServiceShutdown, not a defer here, so
 	// the store and sync loops shut down through the Wails service lifecycle.
 
-	onboarding := onboard.New(mailApp)
-
-	// Desktop notifications service, exposed to the frontend so the test panel
-	// in Settings → Notifications can drive it.
 	notifs := notifications.New()
+	app := buildApp(mailApp, notifs)
+	wireEvents(app, mailApp, notifs)
+	newMainWindow(app)
+
+	if err := app.Run(); err != nil {
+		log.Fatalf("application exited with error: %v", err)
+	}
+}
+
+// configDir returns <UserConfigDir>/email, creating it 0700 if missing.
+func configDir() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("locate config dir: %w", err)
+	}
+	dir = filepath.Join(dir, "email")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create config dir: %w", err)
+	}
+	return dir, nil
+}
+
+// buildApp constructs the Wails application and registers the frontend-facing
+// services.
+func buildApp(mailApp *desktop.App, notifs *notifications.NotificationService) *application.App {
+	onboarding := onboard.New(mailApp)
 
 	// The email SDK client is not bound directly; instead small facade services
 	// expose an intentional, domain-grouped slice of it to the frontend.
 	svc := service.NewServices(mailApp.Client)
 
-	app := application.New(application.Options{
+	return application.New(application.Options{
 		Name:        "Pigeon",
 		Description: "A keyboard focused email client",
 		Services: []application.Service{
 			application.NewService(onboarding),
+			// Desktop notifications service, exposed to the frontend so the test
+			// panel in Settings → Notifications can drive it.
 			application.NewService(notifs),
 			application.NewService(desktop.NewSyncSettings(mailApp)),
 			application.NewService(svc.Mailboxes),
@@ -72,7 +97,11 @@ func main() {
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 	})
+}
 
+// wireEvents connects notification responses and newly polled mail to frontend
+// events. Called before sync starts so initial loops use the handler.
+func wireEvents(app *application.App, mailApp *desktop.App, notifs *notifications.NotificationService) {
 	// Forward notification action responses (button taps, replies) to the
 	// frontend so the test panel can show what came back.
 	notifs.OnNotificationResponse(func(result notifications.NotificationResult) {
@@ -84,7 +113,7 @@ func main() {
 	})
 
 	// Announce newly polled mail as a desktop notification, and nudge the
-	// frontend to refresh. Wired before sync starts so initial loops use it.
+	// frontend to refresh.
 	mailApp.SetNewMailHandler(func(acct email.AccountID, mb provider.MailboxRef, msgs []email.Message) {
 		notify.NewMail(notifs, mb, msgs, mailApp.NotifyPrefs())
 		app.Event.Emit("mail:new", map[string]any{
@@ -95,7 +124,10 @@ func main() {
 	})
 
 	// Background sync is started by desktop.Lifecycle.ServiceStartup once the app is up.
+}
 
+// newMainWindow opens the primary application window.
+func newMainWindow(app *application.App) {
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "Main",
 		Width:  1280,
@@ -112,8 +144,4 @@ func main() {
 		BackgroundColour: application.NewRGB(6, 7, 15),
 		URL:              "/",
 	})
-
-	if err := app.Run(); err != nil {
-		log.Fatalf("application exited with error: %v", err)
-	}
 }
