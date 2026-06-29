@@ -1,8 +1,8 @@
 // Package events is an in-process changefeed. Store mutations publish Events and
-// the Client facade fans them out to subscribers so a UI can react instead of
-// polling. Events are best-effort hints: a slow subscriber may miss individual
-// events (its buffer drops), so treat an event as "something changed, refetch"
-// rather than an authoritative log.
+// a Bus fans them out to subscribers (re-exposed via the email.Client facade) so
+// a UI can react instead of polling. Events are best-effort hints: a slow
+// subscriber may miss individual events (its buffer drops), so treat an event as
+// "something changed, refetch" rather than an authoritative log.
 package events
 
 import (
@@ -64,8 +64,9 @@ func (b *Bus) Subscribe() (<-chan Event, func()) {
 	return ch, cancel
 }
 
-// Publish delivers e to all subscribers. Non-blocking: if a subscriber's buffer
-// is full, the event is dropped for that subscriber.
+// Publish delivers e to all subscribers. Events with no IDs are ignored.
+// Non-blocking: if a subscriber's buffer is full, the event is dropped for that
+// subscriber.
 func (b *Bus) Publish(e Event) {
 	if b == nil || len(e.IDs) == 0 {
 		return
