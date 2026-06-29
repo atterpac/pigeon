@@ -24,11 +24,21 @@ type Engine struct {
 	// store-level lease, so serialization lives here.
 	mu     sync.Mutex
 	drains map[model.AccountID]*sync.Mutex
+	nudges map[model.AccountID]chan struct{}
+
+	// bodies coalesces concurrent body fetches for the same message so a
+	// foreground open and a background warm don't both hit the network for it.
+	bodies *inflightBodies
 }
 
 // New returns an engine bound to a store.
 func New(s *store.Store) *Engine {
-	return &Engine{store: s, drains: map[model.AccountID]*sync.Mutex{}}
+	return &Engine{
+		store:  s,
+		drains: map[model.AccountID]*sync.Mutex{},
+		nudges: map[model.AccountID]chan struct{}{},
+		bodies: newInflightBodies(),
+	}
 }
 
 // drainLock returns the per-account mutex that serializes outbox drains.
@@ -41,6 +51,32 @@ func (e *Engine) drainLock(acct model.AccountID) *sync.Mutex {
 		e.drains[acct] = m
 	}
 	return m
+}
+
+// drainNudge returns the per-account channel that requests a prompt background
+// outbox drain. Buffered (cap 1): a pending nudge already guarantees the loop
+// will drain and pick up any newly-enqueued op, so extra nudges coalesce. The
+// producer (NudgeOutbox) and consumer (outboxLoop) share one channel per account.
+func (e *Engine) drainNudge(acct model.AccountID) chan struct{} {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	ch := e.nudges[acct]
+	if ch == nil {
+		ch = make(chan struct{}, 1)
+		e.nudges[acct] = ch
+	}
+	return ch
+}
+
+// NudgeOutbox requests a prompt background drain for acct without blocking.
+// Callers that mutate locally and enqueue a durable op then nudge here get
+// near-immediate server delivery while returning as soon as the change is
+// durable. If no outbox loop is running, the op still drains on the next launch.
+func (e *Engine) NudgeOutbox(acct model.AccountID) {
+	select {
+	case e.drainNudge(acct) <- struct{}{}:
+	default: // a drain is already pending; it will pick up this op too
+	}
 }
 
 // RegisterAccount persists the account and its mailbox topology.

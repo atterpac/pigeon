@@ -98,10 +98,12 @@ func (e *Engine) RunAccount(ctx context.Context, p provider.Provider, acct model
 		return err
 	}
 
-	// Launch ordering: forward-sync the inbox, then warm the first pages of
-	// bodies, then let history backfill run. `inboxPrimed` releases warming
-	// once envelopes exist; `warmDone` releases backfill once warming finishes
-	// (or its grace window elapses) so backfill never starves the warm fetch.
+	// Launch ordering: forward-sync the inbox to establish its cursor, then warm
+	// the first pages of bodies (warmLoop seeds the newest envelopes itself, as
+	// priming returns none), then let full history backfill run. `inboxPrimed`
+	// releases warming once the cursor is primed; `warmDone` releases backfill
+	// once warming finishes (or its grace window elapses) so backfill never
+	// starves the warm fetch.
 	inboxPrimed := make(chan struct{})
 	warmDone := make(chan struct{})
 
@@ -137,25 +139,42 @@ func (e *Engine) snoozeLoop(ctx context.Context, acct model.AccountID, opt Optio
 	}
 }
 
-// outboxLoop drains queued outbound sends on a timer.
+// outboxLoop drains queued outbound mutations/sends. It drains on a timer and,
+// promptly, whenever a mutation nudges (see NudgeOutbox) — so interactive actions
+// reach the server in milliseconds without the caller blocking on the network.
 func (e *Engine) outboxLoop(ctx context.Context, p provider.Provider, acct model.AccountID, opt Options, wait func(context.Context) error) error {
 	ticker := time.NewTicker(opt.OutboxInterval)
 	defer ticker.Stop()
+	nudge := e.drainNudge(acct)
+	drain := func() error {
+		if err := wait(ctx); err != nil {
+			return err
+		}
+		n, err := e.DrainOutbox(ctx, p, acct)
+		if err != nil {
+			opt.Logger.Warn("outbox drain failed", "err", err)
+			return nil
+		}
+		if n > 0 {
+			opt.Logger.Info("outbox", "sent", n)
+		}
+		return nil
+	}
+	// Flush any ops queued by a prior session before waiting for the first tick.
+	if err := drain(); err != nil {
+		return err
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := wait(ctx); err != nil {
+			if err := drain(); err != nil {
 				return err
 			}
-			n, err := e.DrainOutbox(ctx, p, acct)
-			if err != nil {
-				opt.Logger.Warn("outbox drain failed", "err", err)
-				continue
-			}
-			if n > 0 {
-				opt.Logger.Info("outbox", "sent", n)
+		case <-nudge:
+			if err := drain(); err != nil {
+				return err
 			}
 		}
 	}
@@ -221,9 +240,16 @@ func (e *Engine) forwardLoop(ctx context.Context, p provider.Provider, acct mode
 }
 
 // warmLoop fetches bodies for the first pages of the primary mailbox at
-// launch, ahead of history backfill, then closes warmDone to release backfill.
-// It waits for inboxPrimed so envelopes exist before warming, and always closes
-// warmDone (even when disabled or on error) so backfill is never stuck.
+// launch, ahead of full history backfill, then closes warmDone to release
+// backfill. It always closes warmDone (even when disabled or on error) so
+// backfill is never stuck.
+//
+// The launch forward sync only primes the inbox cursor — it returns no
+// envelopes (see imap.Provider.Sync's first-sync branch) — and full history
+// backfill is gated behind this warm. So warmLoop first seeds the newest
+// envelopes itself by paging backfill until the warm window is populated, then
+// warms their bodies. Without this the warm window is empty and only the lone
+// just-arrived message (if any) gets warmed.
 func (e *Engine) warmLoop(ctx context.Context, p provider.Provider, acct model.AccountID, refs []provider.MailboxRef, opt Options, wait func(context.Context) error, primed, warmDone chan struct{}) error {
 	defer close(warmDone)
 	if opt.BodyWarmPages <= 0 || len(refs) == 0 {
@@ -234,12 +260,36 @@ func (e *Engine) warmLoop(ctx context.Context, p provider.Provider, acct model.A
 		return ctx.Err()
 	case <-primed:
 	}
+	// Warm only the primary (first) mailbox — the inbox the user opens first.
+	ref := refs[0]
+	want := opt.BodyWarmPages * warmPageSize
+
+	// Seed the newest envelopes before warming bodies. Paging newest-first here
+	// is the same work backfill would do, pulled earlier; backfill resumes from
+	// the cursor we advance (BackfillPage persists it), so nothing is re-fetched.
+	maxSeedPages := want/max(opt.BackfillPageSize, 1) + 2
+	for range maxSeedPages {
+		msgs, err := e.store.MailboxMessages(ctx, acct, ref.ID, want)
+		if err == nil && len(msgs) >= want {
+			break
+		}
+		if err := wait(ctx); err != nil {
+			return err
+		}
+		n, done, berr := e.BackfillPage(ctx, p, acct, ref, opt.BackfillPageSize)
+		if berr != nil {
+			opt.Logger.Warn("warm seed backfill failed", "mailbox", ref.Path, "err", berr)
+			break
+		}
+		if done || n == 0 {
+			break
+		}
+	}
+
 	if err := wait(ctx); err != nil {
 		return err
 	}
-	// Warm only the primary (first) mailbox — the inbox the user opens first.
-	ref := refs[0]
-	n, err := e.WarmBodies(ctx, p, acct, ref.ID, opt.BodyWarmPages*warmPageSize)
+	n, err := e.WarmBodies(ctx, p, acct, ref.ID, want)
 	if err != nil {
 		opt.Logger.Warn("body warm failed", "mailbox", ref.Path, "err", err)
 		return nil
