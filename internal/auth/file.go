@@ -14,6 +14,11 @@ import (
 // it on hosts without an OS Secret Service (the keyring's "name is not
 // activatable" error). Tokens are stored in plaintext, so the file must live on
 // an adequately protected filesystem; treat it like an SSH private key.
+//
+// Writes are atomic but the store assumes a single writer: each Set/Delete
+// rewrites the whole file, so concurrent writers to the same path (separate
+// processes, or separate instances in one process — the mutex is per-instance)
+// can clobber each other's updates.
 type File struct {
 	path string
 	mu   sync.Mutex
@@ -52,19 +57,11 @@ func (f *File) load() (map[string]Credential, error) {
 }
 
 func (f *File) save(m map[string]Credential) error {
-	if err := os.MkdirAll(filepath.Dir(f.path), 0o700); err != nil {
-		return err
-	}
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
 	}
-	// Write to a temp file then rename for atomicity; 0600 perms.
-	tmp := f.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, f.path)
+	return writeFileAtomic(f.path, b)
 }
 
 func (f *File) Get(_ context.Context, account string) (Credential, error) {

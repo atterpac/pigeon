@@ -17,8 +17,13 @@ type Keyring struct {
 	service string
 }
 
-// NewKeyring returns a keyring-backed store.
+// NewKeyring returns a keyring-backed store under the default service namespace.
 func NewKeyring() *Keyring { return &Keyring{service: keyringService} }
+
+// NewKeyringService returns a keyring-backed store under a custom service
+// namespace, so tests (or multi-tenant hosts) can isolate their entries from the
+// default.
+func NewKeyringService(service string) *Keyring { return &Keyring{service: service} }
 
 func (k *Keyring) Get(_ context.Context, account string) (Credential, error) {
 	raw, err := keyring.Get(k.service, account)

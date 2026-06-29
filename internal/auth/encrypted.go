@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -9,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 
 	"golang.org/x/crypto/argon2"
@@ -24,6 +24,7 @@ type Encrypted struct {
 	path string
 	pass func() ([]byte, error)
 	mu   sync.Mutex
+	m    map[string]Credential // decrypted creds, cached after first load; nil until loaded
 }
 
 // argon2id parameters. Tuned for an interactive secret unlocked occasionally;
@@ -53,6 +54,10 @@ type envelope struct {
 
 // NewEncrypted returns an encrypted store at path. pass is called when the file
 // must be read or written; it should return the passphrase bytes.
+//
+// Like File, the store assumes a single writer: each Set/Delete rewrites the
+// whole file, so concurrent writers to the same path (separate processes, or
+// separate instances in one process) can clobber each other's updates.
 func NewEncrypted(path string, pass func() ([]byte, error)) *Encrypted {
 	return &Encrypted{path: path, pass: pass}
 }
@@ -70,7 +75,9 @@ func PassphraseFromEnv() func() ([]byte, error) {
 			if err != nil {
 				return nil, fmt.Errorf("read keyfile: %w", err)
 			}
-			return b, nil
+			// A trailing newline (e.g. from `echo secret > keyfile`) would
+			// otherwise silently become part of the passphrase.
+			return bytes.TrimRight(b, "\r\n"), nil
 		}
 		return nil, errors.New("no passphrase: set EMAIL_CRED_PASSPHRASE or EMAIL_CRED_KEYFILE")
 	}
@@ -100,6 +107,7 @@ func (e *Encrypted) load() (map[string]Credential, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer wipe(pass)
 	gcm, err := newGCM(deriveKey(pass, env.Salt, env.Params))
 	if err != nil {
 		return nil, err
@@ -120,6 +128,7 @@ func (e *Encrypted) save(m map[string]Credential) error {
 	if err != nil {
 		return err
 	}
+	defer wipe(pass)
 	salt := make([]byte, saltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return err
@@ -148,14 +157,7 @@ func (e *Encrypted) save(m map[string]Credential) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(e.path), 0o700); err != nil {
-		return err
-	}
-	tmp := e.path + ".tmp"
-	if err := os.WriteFile(tmp, out, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, e.path)
+	return writeFileAtomic(e.path, out)
 }
 
 func newGCM(key []byte) (cipher.AEAD, error) {
@@ -166,10 +168,35 @@ func newGCM(key []byte) (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
+// wipe zeroes a slice holding sensitive material. Best-effort — Go's GC may have
+// already copied it — but it shortens the window the passphrase is readable.
+func wipe(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
+// loadCached returns the decrypted credential map, running the argon2id KDF and
+// reading from disk only on the first call; later reads reuse the in-memory
+// copy. This keeps Get off the ~100ms KDF path, at the cost of holding plaintext
+// secrets in memory for the process lifetime — an accepted tradeoff for a
+// long-lived process. Callers must hold e.mu.
+func (e *Encrypted) loadCached() (map[string]Credential, error) {
+	if e.m != nil {
+		return e.m, nil
+	}
+	m, err := e.load()
+	if err != nil {
+		return nil, err
+	}
+	e.m = m
+	return m, nil
+}
+
 func (e *Encrypted) Get(_ context.Context, account string) (Credential, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	m, err := e.load()
+	m, err := e.loadCached()
 	if err != nil {
 		return Credential{}, err
 	}
@@ -183,18 +210,22 @@ func (e *Encrypted) Get(_ context.Context, account string) (Credential, error) {
 func (e *Encrypted) Set(_ context.Context, account string, c Credential) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	m, err := e.load()
+	m, err := e.loadCached()
 	if err != nil {
 		return err
 	}
 	m[account] = c
-	return e.save(m)
+	if err := e.save(m); err != nil {
+		e.m = nil // disk write failed; drop cache so the next read reflects disk
+		return err
+	}
+	return nil
 }
 
 func (e *Encrypted) Delete(_ context.Context, account string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	m, err := e.load()
+	m, err := e.loadCached()
 	if err != nil {
 		return err
 	}
@@ -202,5 +233,9 @@ func (e *Encrypted) Delete(_ context.Context, account string) error {
 		return ErrNotFound
 	}
 	delete(m, account)
-	return e.save(m)
+	if err := e.save(m); err != nil {
+		e.m = nil // disk write failed; drop cache so the next read reflects disk
+		return err
+	}
+	return nil
 }
