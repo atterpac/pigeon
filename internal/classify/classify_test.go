@@ -47,6 +47,64 @@ func TestDefaultPrimary(t *testing.T) {
 	}
 }
 
+func TestSocialClassification(t *testing.T) {
+	cases := []struct {
+		name string
+		in   Input
+	}{
+		{"known domain", Input{From: []model.Address{{Addr: "info@linkedin.com"}}}},
+		{"notification sender + social domain", Input{
+			From: []model.Address{{Addr: "notification@email.facebook.com"}},
+		}},
+		{"social text phrase", Input{
+			Subject: "Jane tagged you in a photo",
+			From:    []model.Address{{Name: "Jane", Addr: "jane@example.com"}},
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Classify(tc.in); got != model.CategorySocial {
+				t.Fatalf("expected social, got %q", got)
+			}
+		})
+	}
+}
+
+func TestForumClassification(t *testing.T) {
+	cases := []struct {
+		name string
+		in   Input
+	}{
+		{"list-id header", Input{
+			From:    []model.Address{{Addr: "owner@example.com"}},
+			Headers: map[string][]string{"List-Id": {"<dev.example.com>"}},
+		}},
+		{"groups domain", Input{From: []model.Address{{Addr: "team@groups.google.com"}}}},
+		{"digest phrase at end of subject", Input{
+			Subject: "Weekly digest",
+			From:    []model.Address{{Addr: "bot@example.com"}},
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Classify(tc.in); got != model.CategoryForums {
+				t.Fatalf("expected forums, got %q", got)
+			}
+		})
+	}
+}
+
+func TestAutoSubmittedUpdates(t *testing.T) {
+	got := Classify(Input{
+		Subject: "Out of office",
+		From:    []model.Address{{Addr: "person@example.com"}},
+		Headers: map[string][]string{"Auto-Submitted": {"auto-replied"}},
+	})
+	if got != model.CategoryUpdates {
+		t.Fatalf("expected updates, got %q", got)
+	}
+}
+
 func TestNewsletterBodyTextPromotions(t *testing.T) {
 	msg := model.Message{
 		Subject: "Discover all The Times offers",

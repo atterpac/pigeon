@@ -65,7 +65,9 @@ func Classify(in Input) model.Category {
 	fromName := strings.ToLower(from.Name)
 	subject := strings.ToLower(in.Subject)
 	snippet := strings.ToLower(in.Snippet)
-	text := subject + " " + snippet
+	// Pad the haystack (not the needles) so boundary-spaced phrases like
+	// " digest " still match a term at the start or end of the text.
+	text := " " + subject + " " + snippet + " "
 	domain := domainOf(fromAddr)
 
 	if isForum(in, fromAddr, domain, text) {
@@ -118,12 +120,17 @@ func isForum(in Input, fromAddr, domain, text string) bool {
 }
 
 func isSocial(fromAddr, domain, text string) bool {
-	return containsAny(domain,
+	if containsAny(domain,
 		"facebookmail.com", "instagram.com", "linkedin.com", "twitter.com", "x.com",
 		"tiktok.com", "redditmail.com", "pinterest.com", "snapchat.com", "discord.com", "bsky.app", "threads.net", "quora.com",
-	) || containsAny(fromAddr, "notification@", "notifications@", "notify@") &&
-		containsAny(domain, "facebook", "instagram", "linkedin", "twitter", "reddit", "discord") ||
-		containsAny(text, " mentioned you ", " tagged you ", " new follower ", " connection request ", "friend request", "trending stories")
+	) {
+		return true
+	}
+	if containsAny(fromAddr, "notification@", "notifications@", "notify@") &&
+		containsAny(domain, "facebook", "instagram", "linkedin", "twitter", "reddit", "discord") {
+		return true
+	}
+	return containsAny(text, " mentioned you ", " tagged you ", " new follower ", " connection request ", "friend request", "trending stories")
 }
 
 func isUpdate(in Input, fromAddr, fromName, domain, text string) bool {
@@ -147,6 +154,33 @@ func isUpdate(in Input, fromAddr, fromName, domain, text string) bool {
 	)
 }
 
+// Brand-specific promotion signals live as data so new senders can be added
+// without touching classification logic. Entries must be lowercase.
+var (
+	// promoDomains are sender domains whose mail is promotional when it also
+	// carries promotional text.
+	promoDomains = []string{
+		"e.newyorktimes.com", "newyorktimes.com", "nytimes.com", "mail.hellobrigit.com",
+		"nintendo.net", "xtime.com", "dollarshaveclub.com", "updates.corsair.com",
+		"selectrewards.com", "devices.life360.com", "e.lowes.com", "lowes.com",
+		"e.amazongames.com", "mail.nerdwallet.com", "emails.macys.com", "macys.com",
+		"members.wayfair.com", "wayfair.com", "substack.com", "mailchimp.com",
+		"campaignmonitor.com", "sendgrid.net", "sendgrid.com", "klaviyomail.com",
+	}
+	// promoSenders are local-parts that mark a sender as promotional on their own.
+	promoSenders = []string{
+		"newsletter@", "newsletters@", "deals@", "offers@", "marketing@", "promo@",
+		"promotions@", "sale@", "news@", "shop@", "editor@", "members@", "hello@mail.",
+		"email@", "lowes@", "corsair@", "nytimes@",
+	}
+	// promoNames are display-name fragments that mark a sender as promotional
+	// when paired with promotional text.
+	promoNames = []string{
+		"newsletter", "deals", "offers", "rewards", "macy", "lowe", "wayfair",
+		"dollar shave", "new york times", "brigit", "nintendo", "corsair",
+	}
+)
+
 func isPromotion(in Input, fromAddr, fromName, domain, text string) bool {
 	bulk := headerHasAny(in.Headers, "Precedence", "bulk", "list") ||
 		hasHeader(in.Headers, "List-Unsubscribe") ||
@@ -158,29 +192,13 @@ func isPromotion(in Input, fromAddr, fromName, domain, text string) bool {
 		"reward", "rewards", "member exclusive", "exclusive is here", "flash sale",
 		"prime day", "service savings", "request a loan", "pre-qualify",
 	)
-	retailDomain := containsAny(domain,
-		"e.newyorktimes.com", "newyorktimes.com", "nytimes.com", "mail.hellobrigit.com",
-		"nintendo.net", "xtime.com", "dollarshaveclub.com", "updates.corsair.com",
-		"selectrewards.com", "devices.life360.com", "e.lowes.com", "lowes.com",
-		"e.amazongames.com", "mail.nerdwallet.com", "emails.macys.com", "macys.com",
-		"members.wayfair.com", "wayfair.com", "substack.com", "mailchimp.com",
-		"campaignmonitor.com", "sendgrid.net", "sendgrid.com", "klaviyomail.com",
-	)
-	promoSender := containsAny(fromAddr,
-		"newsletter@", "newsletters@", "deals@", "offers@", "marketing@", "promo@",
-		"promotions@", "sale@", "news@", "shop@", "editor@", "members@", "hello@mail.",
-		"email@", "lowes@", "corsair@", "nytimes@",
-	)
-	if promoSender {
+	if containsAny(fromAddr, promoSenders...) {
 		return true
 	}
-	if containsAny(fromName,
-		"newsletter", "deals", "offers", "rewards", "macy", "lowe", "wayfair",
-		"dollar shave", "new york times", "brigit", "nintendo", "corsair",
-	) && promoText {
+	if containsAny(fromName, promoNames...) && promoText {
 		return true
 	}
-	if retailDomain && promoText {
+	if containsAny(domain, promoDomains...) && promoText {
 		return true
 	}
 	if bulk && promoText {
@@ -189,7 +207,9 @@ func isPromotion(in Input, fromAddr, fromName, domain, text string) bool {
 	if bulk && containsAny(domain, "mailchimp", "sendgrid", "campaign", "klaviyo", "constantcontact", "substack") {
 		return true
 	}
-	return promoText && containsAny(fromAddr, "no-reply@", "noreply@", "email@", "hello@", "support@")
+	// no-reply / hello senders only count with promo text; support@ and email@
+	// are handled earlier (isUpdate and promoSenders respectively).
+	return promoText && containsAny(fromAddr, "no-reply@", "noreply@", "hello@")
 }
 
 func firstAddress(addrs []model.Address) model.Address {
@@ -225,9 +245,11 @@ func headerHasAny(headers map[string][]string, name string, needles ...string) b
 	return false
 }
 
+// containsAny reports whether s contains any of needles. s is matched as-is;
+// needles must already be lowercase (every caller passes lowercase literals).
 func containsAny(s string, needles ...string) bool {
 	for _, needle := range needles {
-		if needle != "" && strings.Contains(s, strings.ToLower(needle)) {
+		if needle != "" && strings.Contains(s, needle) {
 			return true
 		}
 	}
