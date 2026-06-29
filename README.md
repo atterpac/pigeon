@@ -21,7 +21,7 @@ A keyboard-focused email client. Go + Vue, built with [Wails 3](https://v3.wails
 - [Wails 3](https://v3.wails.io) CLI (`wails3`)
 - [`just`](https://github.com/casey/just)
 - [pnpm](https://pnpm.io)
-- C toolchain (CGO required for SQLite)
+- C toolchain (CGO required for the native webview on linux and macOS)
 
 ### Build
 
@@ -47,3 +47,9 @@ There is maybe a day where I implement the server so others can "roll their own"
 3. Add the account in Pigeon using that 16-character password
 
 Defaults: IMAP `imap.gmail.com:993` (TLS), SMTP `smtp.gmail.com:587` (STARTTLS). Any other provider works too — just supply its IMAP/SMTP host, ports, and an app password.
+
+## Roadmap
+
+- **Gmail/Outlook auth** — OAuth for Outlook / Microsoft 365 since app passwords are being phased out there :(, via the self-hostable "roll your own" auth server mentioned above.
+- **Compose & visualization** — richer compose UX and better thread/message rendering.
+- **Local data server** — HTTP or RPC endpoints to read cached mail/data straight from the local SQLite store (scripting, integrations, other clients/LLMs etc)
