@@ -49,6 +49,16 @@ type Provider struct {
 	connMu   sync.Mutex // guards c/selected during dial/reset/close
 	c        *imapclient.Client
 	selected string // currently selected mailbox path
+
+	// Foreground body fetches run on a dedicated connection so an interactive
+	// thread open never queues on opMu behind a bulk launch-warm or history
+	// backfill holding the shared connection. These fields mirror the shared set
+	// above (op serialization, connection guard, selected-folder tracking) and
+	// are dialed lazily on the first interactive open.
+	fgOpMu     sync.Mutex
+	fgConnMu   sync.Mutex
+	fgC        *imapclient.Client
+	fgSelected string
 }
 
 // New returns an unconnected Provider; the first call dials lazily.
@@ -87,6 +97,19 @@ func (p *Provider) conn(ctx context.Context) (*imapclient.Client, error) {
 	if p.c != nil {
 		return p.c, nil
 	}
+	c, err := p.dial(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p.c = c
+	p.selected = ""
+	return c, nil
+}
+
+// dial opens and authenticates a fresh IMAP connection. It locks nothing and
+// touches no Provider connection state, so it backs both the shared (conn) and
+// foreground (fgConn) channels.
+func (p *Provider) dial(ctx context.Context) (*imapclient.Client, error) {
 	addr := fmt.Sprintf("%s:%d", p.cfg.Host, p.cfg.Port)
 	// Replicate imapclient.DialTLS but via a ctx-aware dialer so a hung connect
 	// is bounded by the caller's deadline. ServerName is inferred from addr.
@@ -105,9 +128,35 @@ func (p *Provider) conn(ctx context.Context) (*imapclient.Client, error) {
 		c.Close()
 		return nil, fmt.Errorf("imap auth: %w", err)
 	}
-	p.c = c
-	p.selected = ""
 	return c, nil
+}
+
+// fgConn returns the dedicated foreground connection, dialing lazily. Guarded by
+// fgConnMu, mirroring conn for the shared channel.
+func (p *Provider) fgConn(ctx context.Context) (*imapclient.Client, error) {
+	p.fgConnMu.Lock()
+	defer p.fgConnMu.Unlock()
+	if p.fgC != nil {
+		return p.fgC, nil
+	}
+	c, err := p.dial(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p.fgC = c
+	p.fgSelected = ""
+	return c, nil
+}
+
+// fgReset drops the foreground connection so the next open reconnects (on error).
+func (p *Provider) fgReset() {
+	p.fgConnMu.Lock()
+	defer p.fgConnMu.Unlock()
+	if p.fgC != nil {
+		p.fgC.Close()
+		p.fgC = nil
+		p.fgSelected = ""
+	}
 }
 
 // saslClient builds the PLAIN SASL client from the configured password.
@@ -375,7 +424,33 @@ func isBodyStructureParseError(err error) bool {
 func (p *Provider) FetchBodies(ctx context.Context, mb provider.MailboxRef, ids []model.MessageID) ([]model.RawMessage, error) {
 	p.opMu.Lock()
 	defer p.opMu.Unlock()
+	c, err := p.conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return p.fetchBodies(ctx, c, mb, ids, &p.selected, p.reset)
+}
 
+// FetchBodiesForeground fetches bodies on a connection reserved for interactive
+// thread opens, so an open never waits on opMu behind a bulk launch-warm or
+// history backfill holding the shared connection. Behaviour is otherwise
+// identical to FetchBodies. The sync engine routes foreground opens here when the
+// provider offers it (see sync.foregroundFetcher).
+func (p *Provider) FetchBodiesForeground(ctx context.Context, mb provider.MailboxRef, ids []model.MessageID) ([]model.RawMessage, error) {
+	p.fgOpMu.Lock()
+	defer p.fgOpMu.Unlock()
+	c, err := p.fgConn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return p.fetchBodies(ctx, c, mb, ids, &p.fgSelected, p.fgReset)
+}
+
+// fetchBodies fetches the raw RFC 5322 bytes for ids in mb over connection c,
+// selecting the folder first if needed. selected tracks c's currently selected
+// mailbox (read/written under the caller's op lock); reset drops c on error. It
+// is shared by the foreground and shared-connection entry points above.
+func (p *Provider) fetchBodies(ctx context.Context, c *imapclient.Client, mb provider.MailboxRef, ids []model.MessageID, selected *string, reset func()) ([]model.RawMessage, error) {
 	// Bodies are fetched by UID/Message-ID within the selected mailbox, so we
 	// must select the folder the message actually lives in (not always INBOX) —
 	// otherwise non-inbox messages resolve to no UID and the body fetch is empty.
@@ -383,16 +458,12 @@ func (p *Provider) FetchBodies(ctx context.Context, mb provider.MailboxRef, ids 
 	if mbPath == "" {
 		mbPath = "INBOX"
 	}
-	c, err := p.conn(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if p.selected != mbPath {
+	if *selected != mbPath {
 		if _, err := c.Select(mbPath, nil).Wait(); err != nil {
-			p.reset()
+			reset()
 			return nil, fmt.Errorf("imap select %q: %w", mbPath, err)
 		}
-		p.selected = mbPath
+		*selected = mbPath
 	}
 	set, idByUID, err := p.resolveUIDs(c, ids)
 	if err != nil {
@@ -407,7 +478,7 @@ func (p *Provider) FetchBodies(ctx context.Context, mb provider.MailboxRef, ids 
 	}
 	msgs, err := c.Fetch(set, opts).Collect()
 	if err != nil {
-		p.reset()
+		reset()
 		return nil, fmt.Errorf("imap fetch bodies: %w", err)
 	}
 	out := make([]model.RawMessage, 0, len(msgs))
@@ -455,6 +526,19 @@ func (p *Provider) Close() error {
 	defer p.opMu.Unlock()
 	p.connMu.Lock()
 	defer p.connMu.Unlock()
+	// Tear down the foreground connection too. Locks are taken shared-then-
+	// foreground here; no path acquires them in the reverse order, so this can't
+	// deadlock against an in-flight open (which holds only the fg locks).
+	p.fgOpMu.Lock()
+	defer p.fgOpMu.Unlock()
+	p.fgConnMu.Lock()
+	defer p.fgConnMu.Unlock()
+	if p.fgC != nil {
+		p.fgC.Logout().Wait()
+		p.fgC.Close()
+		p.fgC = nil
+		p.fgSelected = ""
+	}
 	if p.c == nil {
 		return nil
 	}
