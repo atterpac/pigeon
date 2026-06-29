@@ -19,3 +19,6 @@ SELECT * FROM parts WHERE account = ? AND message = ? ORDER BY seq;
 
 -- name: DeleteParts :exec
 DELETE FROM parts WHERE account = ? AND message = ?;
+
+-- name: DistinctBlobRefs :many
+SELECT DISTINCT blob_ref FROM parts WHERE blob_ref != '';
