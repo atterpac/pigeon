@@ -9,28 +9,13 @@ import (
 
 	"github.com/atterpac/email/internal/blob"
 	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/email/internal/paths"
 	"github.com/atterpac/email/internal/store"
 	synceng "github.com/atterpac/email/internal/sync"
 )
 
-// dbPath resolves the local store location (EMAIL_DB or the XDG data default).
-func dbPath() (string, error) {
-	if p := os.Getenv("EMAIL_DB"); p != "" {
-		return p, nil
-	}
-	dir := os.Getenv("XDG_DATA_HOME")
-	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("locate home dir (set EMAIL_DB or XDG_DATA_HOME): %w", err)
-		}
-		dir = filepath.Join(home, ".local", "share")
-	}
-	return filepath.Join(dir, "email", "mail.db"), nil
-}
-
 func openStore(ctx context.Context) (*store.Store, error) {
-	path, err := dbPath()
+	path, err := paths.DBPath()
 	if err != nil {
 		return nil, err
 	}
