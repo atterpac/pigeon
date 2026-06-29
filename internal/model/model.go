@@ -1,5 +1,6 @@
 // Package model holds the core domain types shared across the SDK. These are
-// provider-agnostic: a Gmail message and an IMAP message both map onto them.
+// provider-agnostic so additional backends can map onto them; today the only
+// backend is IMAP/SMTP.
 package model
 
 import "time"
@@ -14,7 +15,7 @@ type MessageID string
 // ThreadID groups messages into a conversation.
 type ThreadID string
 
-// LabelID identifies a Gmail label or, for IMAP, a folder mapped to a label.
+// LabelID identifies a mailbox/folder mapped to a label.
 type LabelID string
 
 // Kind distinguishes the backend used by an account. IMAP/SMTP is the only
@@ -25,14 +26,23 @@ const (
 	KindIMAP Kind = iota
 )
 
+func (k Kind) String() string {
+	switch k {
+	case KindIMAP:
+		return "imap"
+	default:
+		return "unknown"
+	}
+}
+
 // Account is a configured mailbox login.
 type Account struct {
 	ID    AccountID
 	Kind  Kind
 	Email string
 	Name  string
-	// Connection details for custom IMAP/SMTP accounts. Empty for Gmail and
-	// well-known domains, which are resolved from a built-in endpoint map.
+	// Connection details for custom IMAP/SMTP accounts. Empty for well-known
+	// domains (e.g. gmail.com), which are resolved from a built-in endpoint map.
 	// Credentials live in auth.CredentialStore, never here.
 	IMAPHost string
 	IMAPPort int
@@ -40,12 +50,12 @@ type Account struct {
 	SMTPPort int
 }
 
-// Mailbox is an IMAP folder or a Gmail label, normalized.
+// Mailbox is a normalized IMAP folder (Gmail labels appear as folders over IMAP).
 type Mailbox struct {
 	ID      LabelID
 	Account AccountID
 	Name    string // display name
-	Path    string // IMAP folder path; empty for Gmail
+	Path    string // IMAP folder path
 	Role    Role   // semantic role if known (Inbox, Sent, ...)
 	Unread  int
 	Total   int
@@ -69,6 +79,25 @@ const (
 	RoleSpam
 	RoleArchive
 )
+
+func (r Role) String() string {
+	switch r {
+	case RoleInbox:
+		return "inbox"
+	case RoleSent:
+		return "sent"
+	case RoleDrafts:
+		return "drafts"
+	case RoleTrash:
+		return "trash"
+	case RoleSpam:
+		return "spam"
+	case RoleArchive:
+		return "archive"
+	default:
+		return "none"
+	}
+}
 
 // Address is a parsed RFC 5322 address.
 type Address struct {
@@ -212,8 +241,8 @@ type Draft struct {
 
 // Snoozed records a message hidden from the inbox until Until.
 type Snoozed struct {
-	Message MessageID
-	Until   time.Time
+	MessageID MessageID
+	Until     time.Time
 }
 
 // Outfile is an attachment to include in an Outgoing message.
