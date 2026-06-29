@@ -1,5 +1,8 @@
 app := "Pigeon"
-out := "bin/" + app
+# host GOARCH (map just's arch() to Go naming) and host binary extension
+goarch := if arch() == "x86_64" { "amd64" } else if arch() == "aarch64" { "arm64" } else { arch() }
+ext := if os() == "windows" { ".exe" } else { "" }
+out := "bin/" + app + ext
 pkg := "./cmd/email"
 dev_app := "bin/" + app + ".dev.app"
 release_app := "bin/" + app + ".app"
@@ -48,6 +51,19 @@ bindings:
 build:
     CGO_ENABLED=1 go build -buildvcs=false -gcflags=all="-l" -o {{out}} {{pkg}}
 
+# build a universal (arm64 + amd64) macOS binary into bin/ via lipo. Apple's
+# clang/SDK are cross-arch, so the x86_64 slice builds fine on Apple Silicon.
+[macos]
+build-universal:
+    MACOSX_DEPLOYMENT_TARGET=12.0 CGO_CFLAGS=-mmacosx-version-min=12.0 CGO_LDFLAGS=-mmacosx-version-min=12.0 CGO_ENABLED=1 GOARCH=arm64 go build -buildvcs=false -gcflags=all="-l" -o bin/{{app}}-arm64 {{pkg}}
+    MACOSX_DEPLOYMENT_TARGET=12.0 CGO_CFLAGS=-mmacosx-version-min=12.0 CGO_LDFLAGS=-mmacosx-version-min=12.0 CGO_ENABLED=1 GOARCH=amd64 go build -buildvcs=false -gcflags=all="-l" -o bin/{{app}}-amd64 {{pkg}}
+    lipo -create -output {{out}} bin/{{app}}-arm64 bin/{{app}}-amd64
+    rm bin/{{app}}-arm64 bin/{{app}}-amd64
+
+# cross-compile a Windows .exe from any host (pure Go)
+xbuild-windows arch="amd64": build-frontend
+    GOOS=windows GOARCH={{arch}} CGO_ENABLED=0 go build -buildvcs=false -ldflags="-H windowsgui" -o bin/{{app}}-windows-{{arch}}.exe {{pkg}}
+
 # generate platform icon assets from build/appicon.png; remove stale Assets.car
 # so macOS loads CFBundleIconFile=icons from icons.icns.
 generate-icons:
@@ -55,7 +71,8 @@ generate-icons:
     cd build && wails3 generate icons -input appicon.png -macfilename darwin/icons.icns -windowsfilename windows/icon.ico
 
 # create the macOS development .app wrapper used by local runs
-bundle-dev: build generate-icons
+[macos]
+bundle-dev: build-frontend build generate-icons
     rm -rf {{dev_app}}
     mkdir -p {{dev_app}}/Contents/MacOS
     mkdir -p {{dev_app}}/Contents/Resources
@@ -65,8 +82,9 @@ bundle-dev: build generate-icons
     cp build/darwin/Info.dev.plist {{dev_app}}/Contents/Info.plist
     codesign --force --deep --sign - {{dev_app}}
 
-# create the macOS release .app wrapper
-bundle: build generate-icons
+# package a distributable bundle for the host OS: macOS .app / Linux AppImage / Windows NSIS
+[macos]
+bundle: build-frontend build-universal generate-icons
     rm -rf {{release_app}}
     mkdir -p {{release_app}}/Contents/MacOS
     mkdir -p {{release_app}}/Contents/Resources
@@ -76,10 +94,35 @@ bundle: build generate-icons
     cp build/darwin/Info.plist {{release_app}}/Contents/Info.plist
     codesign --force --deep --sign - {{release_app}}
 
-# run the macOS app bundle; required for notifications because macOS reads
-# CFBundleIdentifier from the app bundle, not from a bare `go run` process.
-run: build-frontend bundle-dev
+# Linux: AppImage -> bin/ (binary is self-contained; AppImage just wraps it)
+[linux]
+bundle: build-frontend build
+    wails3 generate .desktop -name "{{app}}" -exec "{{app}}" -icon "{{app}}" -outputfile build/linux/{{app}}.desktop -categories "Network;Email;"
+    cp {{out}} build/linux/appimage/{{app}}
+    cp build/appicon.png build/linux/appimage/{{app}}.png
+    wails3 generate appimage -binary build/linux/appimage/{{app}} -icon build/linux/appimage/{{app}}.png -desktopfile build/linux/{{app}}.desktop -outputdir bin -builddir build/linux/appimage/build
+
+# Windows: embed icon/manifest via .syso, build, then NSIS installer (needs makensis)
+[windows]
+bundle: build-frontend generate-icons
+    wails3 generate syso -arch {{goarch}} -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info build/windows/info.json -out cmd/email/wails_windows_{{goarch}}.syso
+    just build
+    rm -f cmd/email/wails_windows_{{goarch}}.syso
+    wails3 generate webview2bootstrapper -dir build/windows/nsis
+    cd build/windows/nsis && makensis -DARG_WAILS_{{uppercase(goarch)}}_BINARY="{{justfile_directory()}}/{{out}}" project.nsi
+
+# run the app for local dev (macOS uses the .app so notifications get a bundle id; Linux/Windows exec the binary)
+[macos]
+run: bundle-dev
     {{dev_app}}/Contents/MacOS/{{app}}
+
+[linux]
+run: build-frontend build
+    {{out}}
+
+[windows]
+run: build-frontend build
+    {{out}}
 
 # compile everything (no binary)
 check:

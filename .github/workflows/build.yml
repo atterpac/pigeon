@@ -1,0 +1,115 @@
+name: build
+
+# Cross-OS desktop builds can't be done on one runner: the Wails webview links
+# against per-OS GUI SDKs (Cocoa/WebKit, GTK/WebKitGTK) that no cross-compiler
+# ships. So each target builds natively on its own runner via `just bundle`.
+# (Windows alone could be cross-compiled pure-Go — see `just xbuild-windows`.)
+#
+# On a `v*` tag push, the release job gathers every runner's bundle into one
+# GitHub Release with checksums — no GoReleaser needed.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest     # -> bin/Pigeon.app
+          - os: ubuntu-22.04     # -> bin/*.AppImage  (22.04 has webkit2gtk-4.0)
+          - os: windows-latest   # -> bin/Pigeon-amd64-installer.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - uses: extractions/setup-just@v2
+
+      - name: Install wails3 CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha2.106
+
+      # Linux: GTK/WebKitGTK for the webview + FUSE for AppImage packaging.
+      - name: Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libfuse2
+
+      # Windows: makensis for the NSIS installer step.
+      - name: Windows deps
+        if: runner.os == 'Windows'
+        run: |
+          choco install nsis -y
+          echo "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
+
+      - name: Bundle
+        run: just bundle
+
+      # Normalize each OS's output into single-file release assets under dist/.
+      # The macOS .app is a directory, so it must be zipped to ship as one asset.
+      - name: Stage assets (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          ditto -c -k --keepParent bin/Pigeon.app "dist/Pigeon-macos-universal.app.zip"
+      - name: Stage assets (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist
+          cp bin/*.AppImage dist/
+      - name: Stage assets (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir dist
+          Copy-Item bin\Pigeon-amd64-installer.exe dist\
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pigeon-${{ matrix.os }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: bundle
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the GitHub Release and upload assets
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true   # flatten all per-OS artifacts into dist/
+
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true   # changelog from commits/PRs since last tag
+          fail_on_unmatched_files: true
