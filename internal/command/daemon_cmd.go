@@ -36,18 +36,18 @@ func cmdDaemon(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 
 	st, err := openStore(ctx)
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	eng := synceng.New(st)
 
 	refs := make([]provider.MailboxRef, len(labels))
 	for i, l := range labels {
-		refs[i] = provider.MailboxRef{ID: model.LabelID(l), Path: l}
+		refs[i] = provRef(l)
 	}
 
 	// Cancel cleanly on SIGINT/SIGTERM.

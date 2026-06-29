@@ -7,30 +7,38 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/atterpac/email/internal/blob"
 	"github.com/atterpac/email/internal/model"
 	"github.com/atterpac/email/internal/store"
 	synceng "github.com/atterpac/email/internal/sync"
 )
 
 // dbPath resolves the local store location (EMAIL_DB or the XDG data default).
-func dbPath() string {
+func dbPath() (string, error) {
 	if p := os.Getenv("EMAIL_DB"); p != "" {
-		return p
+		return p, nil
 	}
 	dir := os.Getenv("XDG_DATA_HOME")
 	if dir == "" {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("locate home dir (set EMAIL_DB or XDG_DATA_HOME): %w", err)
+		}
 		dir = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(dir, "email", "mail.db")
+	return filepath.Join(dir, "email", "mail.db"), nil
 }
 
 func openStore(ctx context.Context) (*store.Store, error) {
-	path := dbPath()
+	path, err := dbPath()
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	return store.Open(ctx, path)
+	blobDir := filepath.Join(filepath.Dir(path), "blobs")
+	return store.Open(ctx, path, store.WithBlobStore(blob.NewFS(blobDir)))
 }
 
 // cmdSync: register account + mailboxes, backfill N pages of history, then pull
@@ -38,7 +46,7 @@ func openStore(ctx context.Context) (*store.Store, error) {
 //
 //	email sync <account-email> [mailbox=INBOX] [pageSize=100] [pages=1]
 //	(pages=0 means backfill the entire mailbox)
-func cmdSync(ctx context.Context, args []string) error {
+func cmdSync(ctx context.Context, args []string) (err error) {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: email sync <account-email> [mailbox=INBOX] [pageSize=100] [pages=1]")
 	}
@@ -51,13 +59,18 @@ func cmdSync(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 
 	st, err := openStore(ctx)
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	// Backfill writes envelopes through st; surface a close/flush error if nothing else failed.
+	defer func() {
+		if cerr := st.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 	eng := synceng.New(st)
 
 	acct := model.Account{ID: model.AccountID(account), Kind: model.KindIMAP, Email: account}
@@ -112,7 +125,7 @@ func cmdSearch(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	msgs, err := st.Search(ctx, model.AccountID(args[0]), args[1], 25)
 	if err != nil {
@@ -120,11 +133,7 @@ func cmdSearch(ctx context.Context, args []string) error {
 	}
 	fmt.Printf("%d results for %q:\n", len(msgs), args[1])
 	for _, m := range msgs {
-		from := ""
-		if len(m.From) > 0 {
-			from = m.From[0].Addr
-		}
-		fmt.Printf("  %-30.30s  %-50.50s  %s\n", from, m.Subject, m.Date.Format("2006-01-02"))
+		fmt.Printf("  %-30.30s  %-50.50s  %s\n", firstFrom(m), m.Subject, m.Date.Format("2006-01-02"))
 	}
 	return nil
 }

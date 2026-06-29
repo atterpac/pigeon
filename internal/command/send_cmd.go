@@ -18,7 +18,7 @@ import (
 // delivered immediately (the daemon would otherwise drain on its timer).
 //
 //	email send <account-email> <to> <subject> <body...>
-func cmdSend(ctx context.Context, args []string) error {
+func cmdSend(ctx context.Context, args []string) (err error) {
 	if len(args) < 4 {
 		return fmt.Errorf("usage: email send <account-email> <to> <subject> <body...>")
 	}
@@ -27,13 +27,17 @@ func cmdSend(ctx context.Context, args []string) error {
 	subject := args[2]
 	body := strings.Join(args[3:], " ")
 
+	mid, err := genMessageID(account)
+	if err != nil {
+		return err
+	}
 	out := model.Outgoing{
 		From:    model.Address{Addr: account},
 		To:      parseRecipients(to),
 		Subject: subject,
 		Text:    body,
 	}
-	raw, err := mime.Build(out, time.Now(), genMessageID(account))
+	raw, err := mime.Build(out, time.Now(), mid)
 	if err != nil {
 		return err
 	}
@@ -42,13 +46,18 @@ func cmdSend(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 
 	st, err := openStore(ctx)
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	// Outbox writes go through st; surface a close/flush error if nothing else failed.
+	defer func() {
+		if cerr := st.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 	eng := synceng.New(st)
 
 	acct := model.AccountID(account)
@@ -70,22 +79,25 @@ func cmdSend(ctx context.Context, args []string) error {
 }
 
 func parseRecipients(csv string) []model.Address {
-	var out []model.Address
-	for _, p := range strings.Split(csv, ",") {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, model.Address{Addr: p})
-		}
+	parts := splitCSV(csv)
+	out := make([]model.Address, 0, len(parts))
+	for _, p := range parts {
+		out = append(out, model.Address{Addr: p})
 	}
 	return out
 }
 
-// genMessageID builds a unique RFC 5322 Message-ID using the sender's domain.
-func genMessageID(from string) string {
+// genMessageID builds a unique RFC 5322 Message-ID using the sender's domain. A
+// CSPRNG failure is fatal to uniqueness, so it is surfaced rather than producing
+// a predictable, collision-prone ID.
+func genMessageID(from string) (string, error) {
 	domain := "localhost"
 	if i := strings.LastIndexByte(from, '@'); i >= 0 {
 		domain = from[i+1:]
 	}
 	var b [16]byte
-	_, _ = rand.Read(b[:])
-	return fmt.Sprintf("<%s@%s>", hex.EncodeToString(b[:]), domain)
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("generate message-id: %w", err)
+	}
+	return fmt.Sprintf("<%s@%s>", hex.EncodeToString(b[:]), domain), nil
 }

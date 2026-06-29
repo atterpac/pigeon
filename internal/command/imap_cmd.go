@@ -12,6 +12,14 @@ func provRef(mailbox string) provider.MailboxRef {
 	return provider.MailboxRef{ID: model.LabelID(mailbox), Path: mailbox}
 }
 
+// firstFrom returns the first sender address, or "" when the envelope has none.
+func firstFrom(m model.Message) string {
+	if len(m.From) > 0 {
+		return m.From[0].Addr
+	}
+	return ""
+}
+
 func cmdImapList(ctx context.Context, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: email imap-list <account-email>")
@@ -20,7 +28,7 @@ func cmdImapList(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 
 	mbs, err := p.ListMailboxes(ctx)
 	if err != nil {
@@ -45,7 +53,7 @@ func cmdImapSync(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 
 	ch, cur, err := p.Sync(ctx, provRef(mailbox), nil)
 	if err != nil {
@@ -54,11 +62,7 @@ func cmdImapSync(ctx context.Context, args []string) error {
 	fmt.Printf("synced %q: %d messages (cursor %d bytes)\n", mailbox, len(ch.Upserted), len(cur.Bytes))
 	n := min(len(ch.Upserted), 10)
 	for _, m := range ch.Upserted[:n] {
-		from := ""
-		if len(m.From) > 0 {
-			from = m.From[0].Addr
-		}
-		fmt.Printf("  %-40.40s  %s\n", from, m.Subject)
+		fmt.Printf("  %-40.40s  %s\n", firstFrom(m), m.Subject)
 	}
 	return nil
 }

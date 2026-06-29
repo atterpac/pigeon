@@ -115,26 +115,15 @@ func cmdAuthStatus(ctx context.Context, args []string) error {
 		return fmt.Errorf("usage: email auth-status <account-email>")
 	}
 	account := args[0]
-	store := credStore()
-	cred, err := store.Get(ctx, account)
-	if err != nil {
-		return fmt.Errorf("read credential: %w", err)
-	}
-	if cred.Password == "" {
-		return fmt.Errorf("no password stored for %s (run `email auth %s`)", account, account)
-	}
-	ep, err := resolveEndpoint(account)
+	p, err := newProvider(ctx, account) // validates the stored credential and resolves the endpoint
 	if err != nil {
 		return err
 	}
-	p, err := newProvider(ctx, account)
-	if err != nil {
-		return err
-	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 	if _, err := p.ListMailboxes(ctx); err != nil {
 		return fmt.Errorf("login failed: %w", err)
 	}
+	ep, _ := resolveEndpoint(account) // already succeeded inside newProvider; only for display
 	fmt.Printf("login OK for %s (imap %s:%d)\n", account, ep.host, ep.port)
 	return nil
 }
