@@ -48,7 +48,7 @@ func main() {
 
 	// The email SDK client is not bound directly; instead small facade services
 	// expose an intentional, domain-grouped slice of it to the frontend.
-	mailboxes, messages, mutations, compose, snooze, contacts := service.NewServices(mailApp.Client)
+	svc := service.NewServices(mailApp.Client)
 
 	app := application.New(application.Options{
 		Name:        "Pigeon",
@@ -57,12 +57,12 @@ func main() {
 			application.NewService(onboarding),
 			application.NewService(notifs),
 			application.NewService(desktop.NewSyncSettings(mailApp)),
-			application.NewService(mailboxes),
-			application.NewService(messages),
-			application.NewService(mutations),
-			application.NewService(compose),
-			application.NewService(snooze),
-			application.NewService(contacts),
+			application.NewService(svc.Mailboxes),
+			application.NewService(svc.Messages),
+			application.NewService(svc.Mutations),
+			application.NewService(svc.Compose),
+			application.NewService(svc.Snooze),
+			application.NewService(svc.Contacts),
 			application.NewService(desktop.NewLifecycle(mailApp)),
 		},
 		Assets: application.AssetOptions{
