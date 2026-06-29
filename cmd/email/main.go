@@ -4,11 +4,9 @@ package main
 import (
 	"context"
 	"embed"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -19,6 +17,7 @@ import (
 	"github.com/atterpac/email/internal/desktop/onboard"
 	"github.com/atterpac/email/internal/desktop/service"
 	"github.com/atterpac/email/internal/email"
+	"github.com/atterpac/email/internal/paths"
 	"github.com/atterpac/email/internal/provider"
 )
 
@@ -29,12 +28,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	dir, err := configDir()
+	dbPath, err := paths.DBPath()
 	if err != nil {
-		log.Fatalf("config dir: %v", err)
+		log.Fatalf("resolve db path: %v", err)
 	}
 
-	mailApp, err := desktop.NewApp(ctx, filepath.Join(dir, "mail.db"))
+	mailApp, err := desktop.NewApp(ctx, dbPath)
 	if err != nil {
 		log.Fatalf("init email app: %v", err)
 	}
@@ -49,19 +48,6 @@ func main() {
 	if err := app.Run(); err != nil {
 		log.Fatalf("application exited with error: %v", err)
 	}
-}
-
-// configDir returns <UserConfigDir>/email, creating it 0700 if missing.
-func configDir() (string, error) {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("locate config dir: %w", err)
-	}
-	dir = filepath.Join(dir, "email")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("create config dir: %w", err)
-	}
-	return dir, nil
 }
 
 // buildApp constructs the Wails application and registers the frontend-facing
