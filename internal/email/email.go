@@ -8,12 +8,15 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/atterpac/email/internal/blob"
 	"github.com/atterpac/email/internal/events"
 	"github.com/atterpac/email/internal/mime"
 	"github.com/atterpac/email/internal/model"
@@ -99,7 +102,10 @@ func Open(ctx context.Context, cfg Config) (*Client, error) {
 	if cfg.Provider == nil {
 		return nil, fmt.Errorf("email: Config.Provider is required")
 	}
-	st, err := store.Open(ctx, cfg.DBPath)
+	// Spool large attachments to a blobs/ dir alongside the database so they
+	// don't bloat SQLite rows and can be loaded lazily on open.
+	blobDir := filepath.Join(filepath.Dir(cfg.DBPath), "blobs")
+	st, err := store.Open(ctx, cfg.DBPath, store.WithBlobStore(blob.NewFS(blobDir)))
 	if err != nil {
 		return nil, err
 	}
@@ -315,6 +321,7 @@ func (c *Client) ThreadMessages(ctx context.Context, acct AccountID, thread Thre
 // thread opens, where a local cache miss should be satisfied immediately rather
 // than showing snippets or issuing one request per message.
 func (c *Client) ThreadMessagesWithBodies(ctx context.Context, acct Account, thread ThreadID) ([]Message, error) {
+	start := time.Now()
 	msgs, err := c.store.ThreadMessages(ctx, acct.ID, thread)
 	if err != nil {
 		return nil, err
@@ -331,6 +338,8 @@ func (c *Client) ThreadMessagesWithBodies(ctx context.Context, acct Account, thr
 		if err := c.store.TouchMessagesOpened(ctx, acct.ID, opened, time.Now()); err != nil {
 			return nil, err
 		}
+		// All bodies already cached: this open did no provider I/O.
+		slog.Info("thread open", "thread", thread, "messages", len(msgs), "cache", "hit", "fetched", 0, "dur", time.Since(start))
 		return msgs, nil
 	}
 	p, err := c.provider(ctx, acct)
@@ -340,13 +349,20 @@ func (c *Client) ThreadMessagesWithBodies(ctx context.Context, acct Account, thr
 	// Best-effort: surface the error only when nothing loaded. A partial load
 	// (n>0 with err) still cached some bodies, so render what we got rather than
 	// failing the whole thread open.
-	if n, err := c.eng.LoadBodies(ctx, p, acct.ID, ids); err != nil && n == 0 {
+	fetchStart := time.Now()
+	if n, err := c.eng.LoadBodiesForeground(ctx, p, acct.ID, ids); err != nil && n == 0 {
 		return nil, err
 	}
+	fetchDur := time.Since(fetchStart)
 	if err := c.store.TouchMessagesOpened(ctx, acct.ID, opened, time.Now()); err != nil {
 		return nil, err
 	}
-	return c.store.ThreadMessages(ctx, acct.ID, thread)
+	out, err := c.store.ThreadMessages(ctx, acct.ID, thread)
+	// Cache miss: `fetched` bodies came over the network; `fetch` isolates that
+	// provider time from the surrounding store reads (`dur` is the whole call).
+	slog.Info("thread open", "thread", thread, "messages", len(msgs), "cache", "miss",
+		"fetched", len(ids), "fetch", fetchDur, "dur", time.Since(start))
+	return out, err
 }
 
 // MailboxMessages returns messages in a mailbox/label, newest first.
@@ -397,17 +413,26 @@ func (c *Client) SearchServer(ctx context.Context, acct Account, query string, l
 // and makes the body searchable; subsequent calls are served from the local
 // store with no network.
 func (c *Client) MessageBody(ctx context.Context, acct Account, id MessageID) ([]Part, error) {
+	start := time.Now()
 	p, err := c.provider(ctx, acct)
 	if err != nil {
 		return nil, err
 	}
-	parts, err := c.eng.LoadBody(ctx, p, acct.ID, id)
+	parts, err := c.eng.LoadBodyForeground(ctx, p, acct.ID, id)
 	if err != nil {
 		return nil, err
 	}
 	if err := c.store.TouchMessagesOpened(ctx, acct.ID, []MessageID{id}, time.Now()); err != nil {
 		return nil, err
 	}
+	// Time the backend portion and report the payload size: subtracting this
+	// `dur` from the frontend's body-rpc timing isolates the Wails IPC transfer
+	// of the part bytes (`bytes`), which dominates for image-heavy mail.
+	var bytes int
+	for _, pt := range parts {
+		bytes += len(pt.Content)
+	}
+	slog.Info("message body", "id", id, "parts", len(parts), "bytes", bytes, "dur", time.Since(start))
 	return parts, nil
 }
 
@@ -472,6 +497,21 @@ func (c *Client) Attachments(ctx context.Context, acct Account, id MessageID) ([
 		}
 	}
 	return atts, nil
+}
+
+// PartContent returns a part's bytes, hydrating from the blob store when the
+// part was spooled (empty Content, non-empty BlobRef). Inline and small parts
+// carry their bytes directly and are returned as-is.
+func (c *Client) PartContent(ctx context.Context, p Part) ([]byte, error) {
+	if len(p.Content) > 0 || p.BlobRef == "" {
+		return p.Content, nil
+	}
+	rc, err := c.store.BlobContent(ctx, p.BlobRef)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	return io.ReadAll(rc)
 }
 
 // Events returns a changefeed channel of store mutations and a cancel func.
@@ -569,16 +609,17 @@ func (c *Client) CancelSend(ctx context.Context, acct Account, opID int64) (bool
 // mutate applies a local optimistic change (fn) then flushes the outbox so the
 // provider mutation goes out immediately. The local change has already published
 // a changefeed event, so a UI updates instantly even if the network is slow.
-func (c *Client) mutate(ctx context.Context, acct Account, fn func(AccountID) error) error {
+func (c *Client) mutate(_ context.Context, acct Account, fn func(AccountID) error) error {
+	// fn applies the change to the local store and enqueues a durable outbox op —
+	// that is the part the caller must see succeed. The server write is performed
+	// by the background outbox loop, nudged here for prompt delivery, so
+	// interactive mutations don't block on a network round-trip. Delivery failures
+	// are retried with backoff by the drain rather than surfaced synchronously.
 	if err := fn(acct.ID); err != nil {
 		return err
 	}
-	p, err := c.provider(ctx, acct)
-	if err != nil {
-		return err
-	}
-	_, err = c.eng.DrainOutbox(ctx, p, acct.ID)
-	return err
+	c.eng.NudgeOutbox(acct.ID)
+	return nil
 }
 
 // MarkRead marks messages read (read=true) or unread (read=false).
