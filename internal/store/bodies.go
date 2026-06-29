@@ -1,9 +1,12 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -18,11 +21,39 @@ const snippetLen = 240
 // defaultPruneLimit caps how many bodies a single PruneBodies pass evicts.
 const defaultPruneLimit = 500
 
+// spoolThreshold is the attachment size at or above which SaveBody offloads
+// bytes to the blob store (when configured) instead of inlining them in SQLite.
+// Inline parts (text bodies, cid: images) are never spooled — they're needed
+// immediately for rendering and are bounded by mime.MaxPartBytes.
+const spoolThreshold = 256 << 10 // 256 KiB
+
 // SaveBody persists a message's decoded parts (inline + attachments), marks it
 // body-loaded, updates its snippet, and re-indexes FTS with the body text so it
 // becomes searchable. Replaces any previously stored parts.
+// Large attachment parts are spooled to the blob store first, so the persisted
+// row carries only a BlobRef and an empty Content; spooled parts are mutated in
+// place so callers see the lazy view they'll get back from Parts.
 func (s *Store) SaveBody(ctx context.Context, account model.AccountID, id model.MessageID, parts []model.Part, text string, category model.Category) error {
 	cachedAt := time.Now().Unix()
+
+	// Spool before opening the write tx. Blob-before-row ordering means a crash
+	// leaves at worst an orphaned blob (reclaimed by SweepBlobs), never a row
+	// pointing at a missing blob.
+	if s.blob != nil {
+		for i := range parts {
+			p := &parts[i]
+			if p.BlobRef != "" || p.Disposition != "attachment" || len(p.Content) < spoolThreshold {
+				continue
+			}
+			ref, err := s.blob.Put(ctx, bytes.NewReader(p.Content))
+			if err != nil {
+				return fmt.Errorf("spool part %d: %w", i, err)
+			}
+			p.BlobRef = ref
+			p.Content = nil
+		}
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -78,6 +109,51 @@ func (s *Store) SaveBody(ctx context.Context, account model.AccountID, id model.
 	}
 	s.publish(account, events.KindUpsert, []model.MessageID{id})
 	return nil
+}
+
+// BlobContent opens the bytes of a spooled part by its blob ref. The caller
+// closes the reader. It errors if no blob store is configured.
+func (s *Store) BlobContent(ctx context.Context, ref string) (io.ReadCloser, error) {
+	if s.blob == nil {
+		return nil, errors.New("store: no blob store configured")
+	}
+	return s.blob.Open(ctx, ref)
+}
+
+// SweepBlobs deletes blobs no longer referenced by any stored part, returning
+// the count removed. Orphans younger than minAge are kept so a blob written by
+// an in-flight SaveBody (row not yet committed) is never reclaimed. No-op when
+// no blob store is configured.
+func (s *Store) SweepBlobs(ctx context.Context, now time.Time, minAge time.Duration) (int, error) {
+	if s.blob == nil {
+		return 0, nil
+	}
+	onDisk, err := s.blob.List(ctx)
+	if err != nil {
+		return 0, err
+	}
+	refs, err := s.q.DistinctBlobRefs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	live := make(map[string]struct{}, len(refs))
+	for _, r := range refs {
+		live[r] = struct{}{}
+	}
+	deleted := 0
+	for _, b := range onDisk {
+		if _, ok := live[b.Ref]; ok {
+			continue
+		}
+		if now.Sub(b.ModTime) < minAge {
+			continue // possibly an in-flight write; reclaim on a later sweep
+		}
+		if err := s.blob.Delete(ctx, b.Ref); err != nil {
+			return deleted, err
+		}
+		deleted++
+	}
+	return deleted, nil
 }
 
 // IsBodyLoaded reports whether a message's body parts are cached locally.

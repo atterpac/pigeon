@@ -57,7 +57,7 @@ func (s *Store) ListSnoozes(ctx context.Context, account model.AccountID) ([]mod
 	}
 	out := make([]model.Snoozed, len(rows))
 	for i, r := range rows {
-		out[i] = model.Snoozed{Message: model.MessageID(r.Message), Until: time.Unix(r.Until, 0)}
+		out[i] = model.Snoozed{MessageID: model.MessageID(r.Message), Until: time.Unix(r.Until, 0)}
 	}
 	return out, nil
 }

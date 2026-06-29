@@ -12,16 +12,27 @@ import (
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite"
 
-	migfs "github.com/atterpac/email/db"
+	"github.com/atterpac/email/db/migrations"
+	"github.com/atterpac/email/internal/blob"
 	"github.com/atterpac/email/internal/events"
 	gen "github.com/atterpac/email/internal/store/db"
 )
 
 // Store wraps the SQLite database and the generated query set.
 type Store struct {
-	db  *sql.DB
-	q   *gen.Queries
-	bus *events.Bus
+	db   *sql.DB
+	q    *gen.Queries
+	bus  *events.Bus
+	blob blob.Store // nil ⇒ all parts stay inline in SQLite
+}
+
+// Option configures a Store at Open time.
+type Option func(*Store)
+
+// WithBlobStore offloads large attachment parts to bs instead of inlining their
+// bytes in the database (see SaveBody). Without it, every part stays inline.
+func WithBlobStore(bs blob.Store) Option {
+	return func(s *Store) { s.blob = bs }
 }
 
 // dsn builds a modernc connection string with the pragmas we always want:
@@ -35,8 +46,8 @@ func dsn(path string) string {
 }
 
 // Open opens (or creates) the database at path and migrates it to the latest
-// schema version.
-func Open(ctx context.Context, path string) (*Store, error) {
+// schema version. Pass WithBlobStore to spool large attachments to disk.
+func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
 	db, err := sql.Open("sqlite", dsn(path))
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
@@ -49,19 +60,23 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Store{db: db, q: gen.New(db), bus: events.NewBus()}, nil
+	s := &Store{db: db, q: gen.New(db), bus: events.NewBus()}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s, nil
 }
 
 // Events returns the store's changefeed bus for subscribing to mutations.
 func (s *Store) Events() *events.Bus { return s.bus }
 
 func migrate(ctx context.Context, db *sql.DB) error {
-	goose.SetBaseFS(migfs.Migrations)
+	goose.SetBaseFS(migrations.FS)
 	defer goose.SetBaseFS(nil)
 	if err := goose.SetDialect("sqlite3"); err != nil {
 		return fmt.Errorf("goose dialect: %w", err)
 	}
-	if err := goose.UpContext(ctx, db, "migrations"); err != nil {
+	if err := goose.UpContext(ctx, db, "."); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
 	return nil

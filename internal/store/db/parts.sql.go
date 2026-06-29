@@ -23,6 +23,33 @@ func (q *Queries) DeleteParts(ctx context.Context, arg DeletePartsParams) error 
 	return err
 }
 
+const distinctBlobRefs = `-- name: DistinctBlobRefs :many
+SELECT DISTINCT blob_ref FROM parts WHERE blob_ref != ''
+`
+
+func (q *Queries) DistinctBlobRefs(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, distinctBlobRefs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var blob_ref string
+		if err := rows.Scan(&blob_ref); err != nil {
+			return nil, err
+		}
+		items = append(items, blob_ref)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertPart = `-- name: InsertPart :exec
 INSERT INTO parts (
     account, message, seq, content_type, charset,

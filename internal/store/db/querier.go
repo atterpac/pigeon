@@ -21,6 +21,7 @@ type Querier interface {
 	DeleteOp(ctx context.Context, id int64) error
 	DeleteParts(ctx context.Context, arg DeletePartsParams) error
 	DeleteSnooze(ctx context.Context, arg DeleteSnoozeParams) error
+	DistinctBlobRefs(ctx context.Context) ([]string, error)
 	DueSnoozes(ctx context.Context, arg DueSnoozesParams) ([]string, error)
 	EnqueueOp(ctx context.Context, arg EnqueueOpParams) (int64, error)
 	GetAccount(ctx context.Context, id string) (Account, error)
