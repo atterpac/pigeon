@@ -261,7 +261,9 @@ function createMailShell() {
   async function warmMailbox(mailboxId: string) {
     if (!client.value) return
     try {
-      await client.value.preloadMailboxBodies?.(mailboxId, 40)
+      // Warm aggressively: foreground opens use a dedicated provider connection,
+      // so this background prewarm never delays an open. Backend caps at 100.
+      await client.value.preloadMailboxBodies?.(mailboxId, 100)
       const changed = await client.value.reclassifyMailbox?.(mailboxId, 100) ?? 0
       if (changed > 0 && activeMailbox.value === mailboxId && !searchActive.value) {
         conversations.value = await client.value.listConversations(mailboxId)
@@ -363,9 +365,11 @@ function createMailShell() {
     findExpandedSnapshot = null
     threadLoading.value = true
     status.value = 'loading thread'
+    const tStart = performance.now()
     try {
       const thread = await client.value.getThread(threadId)
       if (seq !== openSeq) return // a newer open superseded this one
+      const tFetched = performance.now()
       selectedThread.value = thread.conversation
       threadMessages.value = thread.messages.map((message, index, messages) => ({ ...message, expanded: message.expanded || index === messages.length - 1 }))
       focusedMessageId.value = threadMessages.value.at(-1)?.id ?? ''
@@ -377,6 +381,11 @@ function createMailShell() {
       // getThread marks the thread read server-side; mirror that locally.
       if (wasUnread) { patchListConversation(threadId, { unread: false }); bumpMailboxUnread(activeMailbox.value, -1) }
       prepareReply('reply')
+      // fetch = getThread (backend+IPC+prep); render = Vue DOM patch after state
+      // assignment. Splits a slow open into backend vs. frontend render cost.
+      await nextTick()
+      const tRendered = performance.now()
+      console.debug(`[timing] openThread fetch=${(tFetched - tStart).toFixed(0)}ms render=${(tRendered - tFetched).toFixed(0)}ms total=${(tRendered - tStart).toFixed(0)}ms`)
     } finally {
       if (seq === openSeq) threadLoading.value = false
     }

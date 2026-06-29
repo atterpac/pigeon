@@ -15,6 +15,7 @@ import Cheatsheet from '../overlays/Cheatsheet.vue'
 import CommandMenu from './CommandMenu.vue'
 import UndoToast from './UndoToast.vue'
 import ShellToast from './ShellToast.vue'
+import VisualSelectionBar from './VisualSelectionBar.vue'
 import SettingsModal from '../overlays/SettingsModal.vue'
 import { PhGearSix } from '@phosphor-icons/vue'
 
@@ -63,6 +64,7 @@ function showList() { mobilePane.value = 'list'; s.focusList() }
 
     <UndoToast />
     <ShellToast />
+    <VisualSelectionBar />
 
     <div class="shell-foot">
       <CommandLine />

@@ -121,13 +121,22 @@ class WailsMailClient implements MailClient {
   }
 
   async getThread(threadId: string): Promise<Thread> {
+    const t0 = performance.now()
     const messages = await Messages.ThreadMessagesWithBodies(this.account, threadId)
+    const t1 = performance.now()
     const threadMessages = await Promise.all(messages.map((message, index) => this.normalizeThreadMessage(message, index === messages.length - 1)))
     const conversation = conversationFromThreadMessages(threadId, this.account.ID, threadMessages, messages)
     if (conversation.unread) {
-      await this.markThreadRead(threadId, true)
       conversation.unread = false
+      // Mark read in the background. The backend mark-read synchronously drains
+      // the outbox (a server-side STORE \Seen round-trip, ~1s), which must not
+      // block rendering the thread. Read-state is reflected optimistically here
+      // and in the list view, and reconciles on the next sync.
+      void this.markThreadRead(threadId, true).catch((error) => console.warn('mark read failed', threadId, error))
     }
+    const t2 = performance.now()
+    // rpc = backend body fetch + IPC; prep = JS normalize (mark-read no longer blocks).
+    console.debug(`[timing] getThread rpc=${(t1 - t0).toFixed(0)}ms prep=${(t2 - t1).toFixed(0)}ms msgs=${messages.length}`)
     return { conversation, messages: threadMessages }
   }
 
@@ -149,7 +158,7 @@ class WailsMailClient implements MailClient {
     const byThread = new Map<string, { messages: BindingMessage[]; until: string }>()
     for (const entry of entries) {
       try {
-        const message = await Messages.Message(this.account.ID, entry.Message)
+        const message = await Messages.Message(this.account.ID, entry.MessageID)
         const threadId = message.Thread || message.ID
         const until = dateToISO(entry.Until)
         const group = byThread.get(threadId) ?? { messages: [], until }
@@ -157,7 +166,7 @@ class WailsMailClient implements MailClient {
         if (Date.parse(until) < Date.parse(group.until)) group.until = until
         byThread.set(threadId, group)
       } catch (error) {
-        console.warn('snoozed message load failed', entry.Message, error)
+        console.warn('snoozed message load failed', entry.MessageID, error)
       }
     }
     return [...byThread.entries()]
@@ -269,6 +278,7 @@ class WailsMailClient implements MailClient {
   }
 
   private async normalizeThreadMessage(message: BindingMessage, expanded: boolean): Promise<ThreadMessage> {
+    const tb0 = performance.now()
     const parts = await Messages.MessageBody(this.account, message.ID).catch((error) => {
       console.warn('Unable to load message body', message.ID, error)
       return message.Parts?.length ? message.Parts : [{
@@ -282,8 +292,16 @@ class WailsMailClient implements MailClient {
         BlobRef: '',
       }]
     })
+    const tb1 = performance.now()
     const body = bodyParagraphs(parts, message.Snippet)
     const html = htmlBody(parts)
+    const attachments = attachmentsFromParts(parts)
+    const inlineImages = inlineImagesFromParts(parts)
+    const tb2 = performance.now()
+    // body-rpc = MessageBody backend + IPC transfer of part bytes; process = JS
+    // HTML/text extraction + inline-image mapping. bytes ≈ IPC payload size.
+    const bytes = parts.reduce((n, p) => n + (typeof p.Content === 'string' ? p.Content.length : 0), 0)
+    console.debug(`[timing] normalize id=${message.ID} body-rpc=${(tb1 - tb0).toFixed(0)}ms process=${(tb2 - tb1).toFixed(0)}ms parts=${parts.length} bytes=${bytes}`)
     return {
       id: message.ID,
       threadId: message.Thread,
@@ -298,8 +316,8 @@ class WailsMailClient implements MailClient {
       expanded,
       rfcMessageId: message.RFCMessageID,
       references: message.References,
-      attachments: attachmentsFromParts(parts),
-      inlineImages: inlineImagesFromParts(parts),
+      attachments,
+      inlineImages,
     }
   }
 }

@@ -2,7 +2,7 @@
 // gracefully) when running outside the desktop app, e.g. the browser preview,
 // so callers don't need to branch on the runtime.
 import { SyncSettings } from '../bindings/github.com/atterpac/email/internal/desktop'
-import { NotifyPrefs } from '../bindings/github.com/atterpac/email/internal/desktop/notify/models'
+import { Prefs as NotifyPrefs } from '../bindings/github.com/atterpac/email/internal/desktop/notify/models'
 
 export type NotifyPrefsInput = {
   mode: string

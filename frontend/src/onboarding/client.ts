@@ -31,11 +31,15 @@ export function createOnboardingClient() {
       const displayName = input.displayName.trim()
       let account
       if (input.method === 'imap') {
-        account = await Onboarding.AddIMAPAccount(
-          email, displayName, input.appPassword,
-          input.imapHost.trim(), Number(input.imapPort) || 0,
-          input.smtpHost.trim(), Number(input.smtpPort) || 0,
-        )
+        account = await Onboarding.AddIMAPAccount({
+          Email: email,
+          DisplayName: displayName,
+          Password: input.appPassword,
+          IMAPHost: input.imapHost.trim(),
+          IMAPPort: Number(input.imapPort) || 0,
+          SMTPHost: input.smtpHost.trim(),
+          SMTPPort: Number(input.smtpPort) || 0,
+        })
       } else {
         account = await Onboarding.AddAppPasswordAccount(email, displayName, input.appPassword)
       }
