@@ -9,30 +9,24 @@ export function emptySignature(): EmailSignature {
   return { id: signatureId(), name: 'New signature', body: '', html: '' }
 }
 
+// An account's signatures.
 export function signaturesFor(settings: Settings, accountId?: string): EmailSignature[] {
   if (!accountId) return []
-  let list = settings.signatureBooks[accountId] ?? []
-  const legacy = settings.signatures[accountId]?.trim()
-  if (!list.length && legacy) {
-    list = [{ id: signatureId(), name: 'Default', body: legacy, html: plainSignatureHtml(legacy) }]
-    settings.signatureBooks = { ...settings.signatureBooks, [accountId]: list }
-  }
-  if (!settings.defaultSignatureIds[accountId] && list.length) {
-    settings.defaultSignatureIds = { ...settings.defaultSignatureIds, [accountId]: list[0]?.id ?? '' }
-  }
-  return list
+  return settings.signatureBooks[accountId] ?? []
 }
 
 export function defaultSignatureId(settings: Settings, accountId?: string) {
   if (!accountId) return ''
   const list = signaturesFor(settings, accountId)
   const saved = settings.defaultSignatureIds[accountId]
-  return list.some((signature) => signature.id === saved) ? saved : list[0]?.id ?? ''
+  return list.some((signature) => signature.id === saved) ? saved : (list[0]?.id ?? '')
 }
 
 export function signatureBody(settings: Settings, accountId?: string, signatureId?: string) {
   if (!accountId || !signatureId) return ''
-  return signaturesFor(settings, accountId).find((signature) => signature.id === signatureId)?.body ?? ''
+  return (
+    signaturesFor(settings, accountId).find((signature) => signature.id === signatureId)?.body ?? ''
+  )
 }
 
 export function signatureHTML(settings: Settings, accountId?: string, signatureId?: string) {
@@ -42,7 +36,10 @@ export function signatureHTML(settings: Settings, accountId?: string, signatureI
 }
 
 export function plainSignatureHtml(body: string) {
-  return body.split('\n').map((line) => escapeHtml(line) || '<br>').join('<br>')
+  return body
+    .split('\n')
+    .map((line) => escapeHtml(line) || '<br>')
+    .join('<br>')
 }
 
 export function sanitizeSignatureHtml(html: string) {
@@ -68,6 +65,9 @@ export function deleteSignature(settings: Settings, accountId: string, id: strin
   const next = signaturesFor(settings, accountId).filter((signature) => signature.id !== id)
   settings.signatureBooks = { ...settings.signatureBooks, [accountId]: next }
   if (settings.defaultSignatureIds[accountId] === id) {
-    settings.defaultSignatureIds = { ...settings.defaultSignatureIds, [accountId]: next[0]?.id ?? '' }
+    settings.defaultSignatureIds = {
+      ...settings.defaultSignatureIds,
+      [accountId]: next[0]?.id ?? '',
+    }
   }
 }

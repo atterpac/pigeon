@@ -37,9 +37,7 @@ export interface Settings {
   // Block remote images in HTML email until explicitly loaded (privacy: stops
   // tracking pixels firing on open).
   blockRemoteImages: boolean
-  // Per-account email signature, keyed by account id. Appended to new messages
-  // and replies.
-  signatures: Record<string, string>
+  // Per-account signature book + the chosen default per account.
   signatureBooks: Record<string, EmailSignature[]>
   defaultSignatureIds: Record<string, string>
 }
@@ -61,7 +59,6 @@ const defaults: Settings = {
   savedSearches: [],
   notify: { mode: 'all', mutedSenders: [], quietHours: { enabled: false, from: '22:00', to: '07:00' } },
   blockRemoteImages: true,
-  signatures: {},
   signatureBooks: {},
   defaultSignatureIds: {},
 }
