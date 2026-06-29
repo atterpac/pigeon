@@ -27,10 +27,6 @@ type App struct {
 
 	creds auth.CredentialStore
 
-	// onNewMail, if set, is invoked by the background sync loop whenever a poll
-	// pulls in new mail. main wires it to the desktop notifications service.
-	onNewMail func(acct email.AccountID, mb provider.MailboxRef, msgs []email.Message)
-
 	mu sync.Mutex
 	// pollInterval is how often background syncs pull mail forward when no push
 	// hint arrives. Guarded by mu; mutated at runtime via SetPollInterval.
@@ -38,6 +34,10 @@ type App struct {
 	// notify holds the user's notification preferences. Guarded by mu; pushed
 	// from the frontend via SetNotifyPrefs and read by the new-mail handler.
 	notify notify.Prefs
+	// onNewMail, if set, is invoked by the background sync loop whenever a poll
+	// pulls in new mail. main wires it to the desktop notifications service.
+	// Guarded by mu; set via SetNewMailHandler, read into each SyncOptions.
+	onNewMail func(acct email.AccountID, mb provider.MailboxRef, msgs []email.Message)
 }
 
 // defaultPollInterval matches the sync engine's own default; kept here so the
@@ -72,7 +72,9 @@ func (a *App) SetNotifyPrefs(prefs notify.Prefs) {
 // mail. Call it before StartConfiguredSyncs / onboarding so freshly started
 // loops pick it up.
 func (a *App) SetNewMailHandler(fn func(acct email.AccountID, mb provider.MailboxRef, msgs []email.Message)) {
+	a.mu.Lock()
 	a.onNewMail = fn
+	a.mu.Unlock()
 }
 
 // NewApp opens the store, wires the credential store (OS keyring), and builds
@@ -117,8 +119,8 @@ type imapEndpoint struct {
 // knownIMAPEndpoints maps an email domain to its well-known IMAP/SMTP servers.
 // IMAP is implicit TLS (993); SMTP is STARTTLS (587).
 var knownIMAPEndpoints = map[string]imapEndpoint{
-	"gmail.com":      {"imap.gmail.com", "smtp.gmail.com", 993, 587},
-	"googlemail.com": {"imap.gmail.com", "smtp.gmail.com", 993, 587},
+	"gmail.com":      {host: "imap.gmail.com", smtpHost: "smtp.gmail.com", port: 993, smtpPort: 587},
+	"googlemail.com": {host: "imap.gmail.com", smtpHost: "smtp.gmail.com", port: 993, smtpPort: 587},
 }
 
 // applyIMAPEndpoints fills cfg's Host/Port/SMTP fields. Per-account servers
@@ -180,14 +182,14 @@ func (a *App) StartConfiguredSyncs(ctx context.Context) error {
 // interval and the registered new-mail handler.
 func (a *App) SyncOptions() email.SyncOptions {
 	a.mu.Lock()
-	interval := a.pollInterval
+	interval, onNewMail := a.pollInterval, a.onNewMail
 	a.mu.Unlock()
 	return email.SyncOptions{
 		PollInterval:     interval,
 		BackfillPageSize: 100,
 		BackfillMaxPages: 5,
 		BodyWarmPages:    3, // warm ~75 newest inbox bodies before backfill
-		OnNewMail:        a.onNewMail,
+		OnNewMail:        onNewMail,
 	}
 }
 

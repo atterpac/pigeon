@@ -62,7 +62,11 @@ func (l *Lifecycle) startChangefeedBridge() {
 
 	go func() {
 		for e := range events {
-			application.Get().Event.Emit(storeChangeEvent, map[string]any{
+			app := application.Get()
+			if app == nil {
+				continue // app torn down; drop the hint
+			}
+			app.Event.Emit(storeChangeEvent, map[string]any{
 				"account": string(e.Account),
 				"kind":    string(e.Kind),
 				"ids":     e.IDs,

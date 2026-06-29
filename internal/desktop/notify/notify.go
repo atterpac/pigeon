@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,29 +34,53 @@ type Prefs struct {
 }
 
 // DefaultPrefs notifies for all new mail until the user narrows it.
-var DefaultPrefs = Prefs{Mode: "all"}
+var DefaultPrefs = Prefs{Mode: ModeAll}
+
+// Notification modes for Prefs.Mode. Stored as plain strings because Prefs is
+// shared with the Wails settings bindings, which serialize the field as a string.
+const (
+	ModeAll   = "all"   // notify for every mailbox
+	ModeInbox = "inbox" // notify only for the inbox
+	ModeNone  = "none"  // suppress all notifications
+)
+
+// Notifier is the slice of the Wails notification service that NewMail depends
+// on. Declaring it here (the consumer) keeps NewMail testable with a fake;
+// *notifications.NotificationService already satisfies it. Pass a true nil (not a
+// nil *NotificationService) to disable notifications.
+type Notifier interface {
+	SendNotification(notifications.NotificationOptions) error
+}
 
 // NewMail raises a desktop notification summarizing freshly synced mail. It only
 // counts unread messages (a re-sync of an already-read thread shouldn't ping),
 // shows the newest sender/subject, and collapses multiples into a count. User
 // preferences (mode, muted senders, quiet hours) can suppress it.
-func NewMail(notifs *notifications.NotificationService, mb provider.MailboxRef, msgs []email.Message, prefs Prefs) {
-	if prefs.Mode == "none" {
-		return
+func NewMail(notifs Notifier, mb provider.MailboxRef, msgs []email.Message, prefs Prefs) {
+	if notifs == nil {
+		return // notifications unavailable on this build/platform
 	}
-	if prefs.Mode == "inbox" && !isInboxRef(mb) {
+	// An empty or unrecognized Mode falls through to notify-for-all, matching
+	// DefaultPrefs; only ModeNone and ModeInbox actively suppress.
+	switch prefs.Mode {
+	case ModeNone:
 		return
+	case ModeInbox:
+		if !isInboxRef(mb) {
+			return
+		}
 	}
 	if quietNow(prefs, time.Now()) {
 		return
 	}
 
-	var unread []email.Message
+	muted := normalizeMuted(prefs.MutedSenders)
+	unread := make([]email.Message, 0, len(msgs))
 	for _, m := range msgs {
 		if slices.Contains(m.Flags, model.FlagSeen) {
 			continue
 		}
-		if senderMuted(m, prefs.MutedSenders) {
+		if senderMuted(m, muted) {
 			continue
 		}
 		unread = append(unread, m)
@@ -64,7 +89,14 @@ func NewMail(notifs *notifications.NotificationService, mb provider.MailboxRef, 
 		return
 	}
 
-	// Newest first so the headline message is the most recent arrival.
+	if err := notifs.SendNotification(compose(mb, unread)); err != nil {
+		log.Printf("send new-mail notification: %v", err)
+	}
+}
+
+// compose builds the notification for a non-empty set of unread messages,
+// headlining the most recent arrival and collapsing multiples into a count.
+func compose(mb provider.MailboxRef, unread []email.Message) notifications.NotificationOptions {
 	newest := unread[0]
 	for _, m := range unread[1:] {
 		if m.Date.After(newest.Date) {
@@ -73,22 +105,17 @@ func NewMail(notifs *notifications.NotificationService, mb provider.MailboxRef, 
 	}
 
 	title := senderLabel(newest)
-	body := newest.Subject
-	if body == "" {
-		body = newest.Snippet
-	}
+	body := firstNonEmpty(newest.Subject, newest.Snippet)
 	if len(unread) > 1 {
 		title = fmt.Sprintf("%d new messages", len(unread))
-		body = fmt.Sprintf("%s — %s", senderLabel(newest), firstNonEmpty(newest.Subject, newest.Snippet))
+		body = fmt.Sprintf("%s — %s", senderLabel(newest), body)
 	}
 
-	if err := notifs.SendNotification(notifications.NotificationOptions{
+	return notifications.NotificationOptions{
 		ID:    fmt.Sprintf("mail-%s-%d", mb.ID, newest.Date.UnixNano()),
 		Title: title,
 		Body:  body,
 		Data:  map[string]any{"mailbox": string(mb.ID), "messageId": string(newest.ID)},
-	}); err != nil {
-		log.Printf("send new-mail notification: %v", err)
 	}
 }
 
@@ -118,8 +145,26 @@ func isInboxRef(mb provider.MailboxRef) bool {
 		strings.EqualFold(mb.Path, string(email.InboxLabel))
 }
 
+// normalizeMuted cleans a muted-senders list once (lower-case, trim, strip a
+// leading "@", drop empties) so senderMuted can compare without re-normalizing
+// per message. Returns nil for an empty result.
+func normalizeMuted(muted []string) []string {
+	if len(muted) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(muted))
+	for _, entry := range muted {
+		e := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(entry, "@")))
+		if e != "" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // senderMuted reports whether a message's From matches any muted entry — either
-// the full address or its domain, case-insensitive.
+// the full address or its domain. muted must already be normalized via
+// normalizeMuted.
 func senderMuted(m email.Message, muted []string) bool {
 	if len(muted) == 0 || len(m.From) == 0 {
 		return false
@@ -132,11 +177,7 @@ func senderMuted(m email.Message, muted []string) bool {
 	if at := strings.LastIndex(addr, "@"); at >= 0 {
 		domain = addr[at+1:]
 	}
-	for _, entry := range muted {
-		e := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(entry, "@")))
-		if e == "" {
-			continue
-		}
+	for _, e := range muted {
 		if e == addr || e == domain {
 			return true
 		}
@@ -169,11 +210,12 @@ func parseHHMM(s string) (int, bool) {
 	if len(parts) != 2 {
 		return 0, false
 	}
-	var h, m int
-	if _, err := fmt.Sscanf(parts[0], "%d", &h); err != nil {
+	h, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil {
 		return 0, false
 	}
-	if _, err := fmt.Sscanf(parts[1], "%d", &m); err != nil {
+	m, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err != nil {
 		return 0, false
 	}
 	if h < 0 || h > 23 || m < 0 || m > 59 {

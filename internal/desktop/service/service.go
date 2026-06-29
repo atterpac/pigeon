@@ -39,6 +39,8 @@ func (m *Mailboxes) DeleteMailbox(ctx context.Context, acct email.Account, id em
 	return m.client.DeleteMailbox(ctx, acct, id)
 }
 
+// SetMailboxIcon stores the frontend's display icon (name), weight, and color
+// for a folder/label and returns the updated mailbox.
 func (m *Mailboxes) SetMailboxIcon(ctx context.Context, acct email.AccountID, id email.LabelID, icon, weight, color string) (email.Mailbox, error) {
 	return m.client.SetMailboxIcon(ctx, acct, id, icon, weight, color)
 }
@@ -46,10 +48,12 @@ func (m *Mailboxes) SetMailboxIcon(ctx context.Context, acct email.AccountID, id
 // Messages exposes read paths plus on-demand and opportunistic fetching.
 type Messages struct{ client *email.Client }
 
+// Threads returns the newest threads for the account, capped at limit.
 func (m *Messages) Threads(ctx context.Context, acct email.AccountID, limit int) ([]email.Thread, error) {
 	return m.client.Threads(ctx, acct, limit)
 }
 
+// ConversationList returns thread summaries for the inbox list view, capped at limit.
 func (m *Messages) ConversationList(ctx context.Context, acct email.AccountID, limit int) ([]email.ThreadListItem, error) {
 	return m.client.ConversationList(ctx, acct, limit)
 }
@@ -58,10 +62,13 @@ func (m *Messages) ThreadMessages(ctx context.Context, acct email.AccountID, thr
 	return m.client.ThreadMessages(ctx, acct, thread)
 }
 
+// ThreadMessagesWithBodies is ThreadMessages but also fetches any missing
+// message bodies on demand before returning.
 func (m *Messages) ThreadMessagesWithBodies(ctx context.Context, acct email.Account, thread email.ThreadID) ([]email.Message, error) {
 	return m.client.ThreadMessagesWithBodies(ctx, acct, thread)
 }
 
+// MailboxMessages returns the newest messages in a folder/label, capped at limit.
 func (m *Messages) MailboxMessages(ctx context.Context, acct email.AccountID, mailbox email.LabelID, limit int) ([]email.Message, error) {
 	return m.client.MailboxMessages(ctx, acct, mailbox, limit)
 }
@@ -70,6 +77,7 @@ func (m *Messages) Message(ctx context.Context, acct email.AccountID, id email.M
 	return m.client.Message(ctx, acct, id)
 }
 
+// Search runs a local-only search over already-synced mail, capped at limit.
 func (m *Messages) Search(ctx context.Context, acct email.AccountID, query string, limit int) ([]email.Message, error) {
 	return m.client.Search(ctx, acct, query, limit)
 }
@@ -88,10 +96,14 @@ func (m *Messages) Attachments(ctx context.Context, acct email.Account, id email
 	return m.client.Attachments(ctx, acct, id)
 }
 
+// PreloadMailboxBodies opportunistically fetches up to limit missing bodies in
+// a folder and returns the number fetched.
 func (m *Messages) PreloadMailboxBodies(ctx context.Context, acct email.Account, mailbox email.LabelID, limit int) (int, error) {
 	return m.client.PreloadMailboxBodies(ctx, acct, mailbox, limit)
 }
 
+// ReclassifyMailbox re-runs classification over up to limit messages in a
+// folder and returns the number reclassified.
 func (m *Messages) ReclassifyMailbox(ctx context.Context, acct email.AccountID, mailbox email.LabelID, limit int) (int, error) {
 	return m.client.ReclassifyMailbox(ctx, acct, mailbox, limit)
 }
@@ -104,10 +116,12 @@ func (m *Messages) SyncOnce(ctx context.Context, acct email.Account, mailbox ema
 // Mutations exposes optimistic message state changes (flags, labels, moves).
 type Mutations struct{ client *email.Client }
 
+// MarkRead sets (read=true) or clears the unread flag on ids.
 func (m *Mutations) MarkRead(ctx context.Context, acct email.Account, ids []email.MessageID, read bool) error {
 	return m.client.MarkRead(ctx, acct, ids, read)
 }
 
+// Star adds (on=true) or removes the star/flag on ids.
 func (m *Mutations) Star(ctx context.Context, acct email.Account, ids []email.MessageID, on bool) error {
 	return m.client.Star(ctx, acct, ids, on)
 }
@@ -116,6 +130,7 @@ func (m *Mutations) Archive(ctx context.Context, acct email.Account, ids []email
 	return m.client.Archive(ctx, acct, ids)
 }
 
+// ApplyLabels adds the labels in add and removes those in remove on ids in one pass.
 func (m *Mutations) ApplyLabels(ctx context.Context, acct email.Account, ids []email.MessageID, add, remove []email.LabelID) error {
 	return m.client.ApplyLabels(ctx, acct, ids, add, remove)
 }
@@ -131,6 +146,8 @@ func (m *Mutations) Delete(ctx context.Context, acct email.Account, ids []email.
 // Compose exposes draft persistence and message delivery.
 type Compose struct{ client *email.Client }
 
+// SaveDraft upserts a draft: pass an empty id to create one (the new id is
+// returned) or an existing id to overwrite it.
 func (c *Compose) SaveDraft(ctx context.Context, acct email.AccountID, id string, out email.Outgoing) (string, error) {
 	return c.client.SaveDraft(ctx, acct, id, out)
 }
@@ -160,6 +177,8 @@ func (c *Compose) CancelSend(ctx context.Context, acct email.Account, opID int64
 	return c.client.CancelSend(ctx, acct, opID)
 }
 
+// SendDraft delivers the draft immediately and, on success, discards it.
+// Returns false if delivery did not occur.
 func (c *Compose) SendDraft(ctx context.Context, acct email.Account, id string) (bool, error) {
 	return c.client.SendDraft(ctx, acct, id)
 }
@@ -192,7 +211,24 @@ func (c *Contacts) Search(ctx context.Context, acct email.AccountID, query strin
 	return c.client.SearchContacts(ctx, acct, query, limit)
 }
 
+// Services is the full set of facade services, all sharing one client.
+type Services struct {
+	Mailboxes *Mailboxes
+	Messages  *Messages
+	Mutations *Mutations
+	Compose   *Compose
+	Snooze    *Snooze
+	Contacts  *Contacts
+}
+
 // NewServices builds the facade service set sharing one client.
-func NewServices(c *email.Client) (*Mailboxes, *Messages, *Mutations, *Compose, *Snooze, *Contacts) {
-	return &Mailboxes{c}, &Messages{c}, &Mutations{c}, &Compose{c}, &Snooze{c}, &Contacts{c}
+func NewServices(c *email.Client) Services {
+	return Services{
+		Mailboxes: &Mailboxes{c},
+		Messages:  &Messages{c},
+		Mutations: &Mutations{c},
+		Compose:   &Compose{c},
+		Snooze:    &Snooze{c},
+		Contacts:  &Contacts{c},
+	}
 }
