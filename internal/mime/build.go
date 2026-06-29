@@ -3,7 +3,6 @@ package mime
 import (
 	"bytes"
 	"fmt"
-	"net/mail"
 	"strings"
 	"time"
 
@@ -45,48 +44,78 @@ func Build(m model.Outgoing, now time.Time, messageID string) ([]byte, error) {
 	}
 
 	var buf bytes.Buffer
-	w, err := gomail.CreateWriter(&buf, h)
-	if err != nil {
-		return nil, fmt.Errorf("mime: create writer: %w", err)
-	}
-	if err := writeBody(w, m); err != nil {
-		return nil, err
-	}
-	for _, att := range m.Attachments {
-		write := writeAttachment
-		if att.ContentID != "" {
-			write = writeInlineImage // referenced from the HTML body via cid:
+	switch {
+	case len(m.Attachments) == 0 && m.HTML == "":
+		// text only → a bare top-level text/plain part (no multipart wrapper).
+		h.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
+		pw, err := gomail.CreateSingleInlineWriter(&buf, h)
+		if err != nil {
+			return nil, fmt.Errorf("mime: create writer: %w", err)
 		}
-		if err := write(w, att); err != nil {
+		if _, err := pw.Write([]byte(m.Text)); err != nil {
 			return nil, err
 		}
-	}
-	if err := w.Close(); err != nil {
-		return nil, fmt.Errorf("mime: close: %w", err)
+		if err := pw.Close(); err != nil {
+			return nil, fmt.Errorf("mime: close: %w", err)
+		}
+	case len(m.Attachments) == 0:
+		// text + html, no attachments → multipart/alternative.
+		iw, err := gomail.CreateInlineWriter(&buf, h)
+		if err != nil {
+			return nil, fmt.Errorf("mime: create writer: %w", err)
+		}
+		if err := writeAltParts(iw, m); err != nil {
+			return nil, err
+		}
+	default:
+		// attachments present → multipart/mixed wrapping the body parts.
+		w, err := gomail.CreateWriter(&buf, h)
+		if err != nil {
+			return nil, fmt.Errorf("mime: create writer: %w", err)
+		}
+		if err := writeMixedBody(w, m); err != nil {
+			return nil, err
+		}
+		for _, att := range m.Attachments {
+			write := writeAttachment
+			if att.ContentID != "" {
+				write = writeInlineImage // referenced from the HTML body via cid:
+			}
+			if err := write(w, att); err != nil {
+				return nil, err
+			}
+		}
+		if err := w.Close(); err != nil {
+			return nil, fmt.Errorf("mime: close: %w", err)
+		}
 	}
 	return buf.Bytes(), nil
 }
 
-func writeBody(w *gomail.Writer, m model.Outgoing) error {
-	iw, err := w.CreateInline()
-	if err != nil {
-		return err
+type bodyPart struct {
+	ctype string
+	body  string
+}
+
+// altParts returns the inline body parts in client-preference order (least to
+// most preferred). text/plain is emitted whenever there's body text, or as the
+// required fallback when the body would otherwise be empty; text/html follows
+// when present.
+func altParts(m model.Outgoing) []bodyPart {
+	var parts []bodyPart
+	if m.Text != "" || m.HTML == "" {
+		parts = append(parts, bodyPart{"text/plain", m.Text})
 	}
-	parts := []struct {
-		ctype string
-		body  string
-	}{}
-	parts = append(parts, struct {
-		ctype string
-		body  string
-	}{"text/plain", m.Text})
 	if m.HTML != "" {
-		parts = append(parts, struct {
-			ctype string
-			body  string
-		}{"text/html", m.HTML})
+		parts = append(parts, bodyPart{"text/html", m.HTML})
 	}
-	for _, p := range parts {
+	return parts
+}
+
+// writeAltParts writes the text/plain (+ optional text/html) parts into an
+// alternative section and closes it.
+func writeAltParts(iw *gomail.InlineWriter, m model.Outgoing) error {
+	for _, p := range altParts(m) {
 		var ih gomail.InlineHeader
 		ih.SetContentType(p.ctype, map[string]string{"charset": "utf-8"})
 		pw, err := iw.CreatePart(ih)
@@ -103,13 +132,32 @@ func writeBody(w *gomail.Writer, m model.Outgoing) error {
 	return iw.Close()
 }
 
+// writeMixedBody writes the body inside a multipart/mixed container: a single
+// text/plain part when there's no HTML alternative, or a multipart/alternative
+// section when there is.
+func writeMixedBody(w *gomail.Writer, m model.Outgoing) error {
+	if m.HTML == "" {
+		var ih gomail.InlineHeader
+		ih.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
+		pw, err := w.CreateSingleInline(ih)
+		if err != nil {
+			return err
+		}
+		if _, err := pw.Write([]byte(m.Text)); err != nil {
+			return err
+		}
+		return pw.Close()
+	}
+	iw, err := w.CreateInline()
+	if err != nil {
+		return err
+	}
+	return writeAltParts(iw, m)
+}
+
 func writeAttachment(w *gomail.Writer, att model.Outfile) error {
 	var ah gomail.AttachmentHeader
-	ct := att.ContentType
-	if ct == "" {
-		ct = "application/octet-stream"
-	}
-	ah.SetContentType(ct, nil)
+	ah.SetContentType(ctOrOctet(att.ContentType), nil)
 	ah.SetFilename(att.Filename)
 	pw, err := w.CreateAttachment(ah)
 	if err != nil {
@@ -128,10 +176,7 @@ func writeAttachment(w *gomail.Writer, att model.Outfile) error {
 // Content-Disposition: attachment.
 func writeInlineImage(w *gomail.Writer, att model.Outfile) error {
 	var ih gomail.InlineHeader
-	ct := att.ContentType
-	if ct == "" {
-		ct = "application/octet-stream"
-	}
+	ct := ctOrOctet(att.ContentType)
 	if att.Filename != "" {
 		ih.SetContentType(ct, map[string]string{"name": att.Filename})
 	} else {
@@ -146,6 +191,14 @@ func writeInlineImage(w *gomail.Writer, att model.Outfile) error {
 		return err
 	}
 	return pw.Close()
+}
+
+// ctOrOctet defaults an empty content type to application/octet-stream.
+func ctOrOctet(ct string) string {
+	if ct == "" {
+		return "application/octet-stream"
+	}
+	return ct
 }
 
 // bareID strips surrounding angle brackets; SetMsgIDList re-adds them.
@@ -164,7 +217,7 @@ func bareIDs(ids []string) []string {
 func addrs(in []model.Address) []*gomail.Address {
 	out := make([]*gomail.Address, 0, len(in))
 	for _, a := range in {
-		out = append(out, &mail.Address{Name: a.Name, Address: a.Addr})
+		out = append(out, &gomail.Address{Name: a.Name, Address: a.Addr})
 	}
 	return out
 }

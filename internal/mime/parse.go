@@ -3,9 +3,11 @@ package mime
 import (
 	"bytes"
 	"fmt"
+	"html"
 	"io"
 	"net/mail"
 	"net/textproto"
+	"slices"
 	"strings"
 
 	_ "github.com/emersion/go-message/charset"
@@ -13,6 +15,13 @@ import (
 
 	"github.com/atterpac/email/internal/model"
 )
+
+// MaxPartBytes bounds the decoded size of any single MIME part that Parse will
+// buffer in memory. A part larger than this makes Parse return an error rather
+// than risk OOM on a hostile or oversized message; raise it if you legitimately
+// need to ingest larger attachments. The store layer is responsible for
+// spooling large parts to the blob store (see model.Part.BlobRef).
+var MaxPartBytes int64 = 50 << 20 // 50 MiB
 
 // Parsed is the decoded content of a raw message.
 type Parsed struct {
@@ -25,6 +34,8 @@ type Parsed struct {
 // inline bodies (text/plain, text/html) and attachments (any disposition with a
 // filename) are returned as model.Part, distinguished by Disposition.
 func Parse(raw []byte) (Parsed, error) {
+	// Headers are best-effort: a message gomail can still stream may have a
+	// header block net/mail rejects, in which case Headers stays empty.
 	headers := map[string][]string{}
 	if msg, err := mail.ReadMessage(bytes.NewReader(raw)); err == nil {
 		headers = headerMap(msg.Header)
@@ -33,7 +44,7 @@ func Parse(raw []byte) (Parsed, error) {
 	if err != nil {
 		return Parsed{}, fmt.Errorf("mime parse: %w", err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 
 	out := Parsed{Headers: headers}
 	for {
@@ -44,9 +55,13 @@ func Parse(raw []byte) (Parsed, error) {
 		if err != nil {
 			return Parsed{}, fmt.Errorf("mime next part: %w", err)
 		}
-		body, err := io.ReadAll(part.Body)
+		// Read one byte past the cap so an oversized part is detectable.
+		body, err := io.ReadAll(io.LimitReader(part.Body, MaxPartBytes+1))
 		if err != nil {
 			return Parsed{}, fmt.Errorf("mime read part: %w", err)
+		}
+		if int64(len(body)) > MaxPartBytes {
+			return Parsed{}, fmt.Errorf("mime: part exceeds %d-byte limit", MaxPartBytes)
 		}
 
 		p := model.Part{Size: int64(len(body)), Content: body}
@@ -81,24 +96,53 @@ func Parse(raw []byte) (Parsed, error) {
 func headerMap(h mail.Header) map[string][]string {
 	out := make(map[string][]string, len(h))
 	for k, values := range h {
-		out[textproto.CanonicalMIMEHeaderKey(k)] = append([]string(nil), values...)
+		out[textproto.CanonicalMIMEHeaderKey(k)] = slices.Clone(values)
 	}
 	return out
 }
 
-// stripTags is a crude HTML-to-text for indexing/snippet purposes only.
+// stripTags is a crude HTML-to-text for indexing/snippet purposes only. It
+// drops markup and the bodies of <script>/<style> elements, decodes HTML
+// entities, and collapses whitespace.
 func stripTags(s string) string {
 	var b strings.Builder
-	inTag := false
-	for _, r := range s {
-		switch {
-		case r == '<':
-			inTag = true
-		case r == '>':
-			inTag = false
-		case !inTag:
-			b.WriteRune(r)
+	skip := "" // non-empty while inside <script>/<style>, holds the element name
+	for i := 0; i < len(s); {
+		lt := strings.IndexByte(s[i:], '<')
+		if lt < 0 {
+			if skip == "" {
+				b.WriteString(s[i:])
+			}
+			break
+		}
+		if skip == "" {
+			b.WriteString(s[i : i+lt])
+		}
+		i += lt
+		gt := strings.IndexByte(s[i:], '>')
+		if gt < 0 {
+			break // unterminated tag: drop the remainder
+		}
+		inner := s[i+1 : i+gt]
+		i += gt + 1
+		switch name := tagName(inner); {
+		case skip != "":
+			if strings.HasPrefix(inner, "/") && name == skip {
+				skip = ""
+			}
+		case name == "script" || name == "style":
+			skip = name
 		}
 	}
-	return strings.Join(strings.Fields(b.String()), " ")
+	return strings.Join(strings.Fields(html.UnescapeString(b.String())), " ")
+}
+
+// tagName extracts the lowercased element name from a tag's inner text (the
+// bytes between < and >), ignoring a leading slash and any attributes.
+func tagName(inner string) string {
+	inner = strings.TrimPrefix(strings.TrimSpace(inner), "/")
+	if i := strings.IndexAny(inner, " \t\r\n/>"); i >= 0 {
+		inner = inner[:i]
+	}
+	return strings.ToLower(inner)
 }

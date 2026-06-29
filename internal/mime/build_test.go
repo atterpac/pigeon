@@ -48,6 +48,49 @@ func TestBuildParses(t *testing.T) {
 	}
 }
 
+// A text-only message with no attachments is a bare text/plain message — no
+// multipart wrapper (matches Build's documented structure).
+func TestBuildTextOnlyIsBare(t *testing.T) {
+	raw, err := Build(model.Outgoing{
+		From:    model.Address{Addr: "me@x.io"},
+		To:      []model.Address{{Addr: "a@y.io"}},
+		Subject: "plain",
+		Text:    "just text",
+	}, time.Unix(1_700_000_000, 0), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := mail.ReadMessage(strings.NewReader(string(raw)))
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	if ct := m.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+		t.Fatalf("expected bare text/plain, got %q", ct)
+	}
+}
+
+// An HTML-only message must not emit an empty text/plain alternative.
+func TestBuildHTMLOnlyOmitsEmptyText(t *testing.T) {
+	raw, err := Build(model.Outgoing{
+		From:    model.Address{Addr: "me@x.io"},
+		To:      []model.Address{{Addr: "a@y.io"}},
+		Subject: "html only",
+		HTML:    "<p>hi</p>",
+	}, time.Unix(1_700_000_000, 0), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	for _, p := range parsed.Parts {
+		if p.ContentType == "text/plain" {
+			t.Fatalf("unexpected text/plain part in HTML-only message")
+		}
+	}
+}
+
 // Inline images survive the build → parse round-trip: the part keeps its
 // Content-ID (bare) and an inline disposition so receiving clients render it in
 // place of the cid: reference.
