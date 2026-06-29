@@ -21,7 +21,8 @@ A keyboard-focused email client. Go + Vue, built with [Wails 3](https://v3.wails
 - [Wails 3](https://v3.wails.io) CLI (`wails3`)
 - [`just`](https://github.com/casey/just)
 - [pnpm](https://pnpm.io)
-- C toolchain (CGO required for the native webview on linux and macOS)
+- C toolchain (CGO required for the native webview on Linux and macOS)
+- Linux only: GTK4 + WebKitGTK 6.0 dev libs — `libgtk-4-dev libwebkitgtk-6.0-dev` (Ubuntu 24.04+)
 
 ### Build
 
