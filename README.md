@@ -75,3 +75,7 @@ Defaults: IMAP `imap.gmail.com:993` (TLS), SMTP `smtp.gmail.com:587` (STARTTLS).
 - **Gmail/Outlook auth** — OAuth for Outlook / Microsoft 365 since app passwords are being phased out there :(, via the self-hostable "roll your own" auth server mentioned above.
 - **Compose & visualization** — richer compose UX and better thread/message rendering.
 - **Local data server** — HTTP or RPC endpoints to read cached mail/data straight from the local SQLite store (scripting, integrations, other clients/LLMs etc)
+
+## License
+
+[MIT](LICENSE) © 2026 Atterpac
