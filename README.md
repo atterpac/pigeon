@@ -59,7 +59,7 @@ Run `just` (no args) for the full recipe list.
 
 ## Accounts
 
-Pigeon is **IMAP + SMTP only — no OAuth**. OAuth would mean running a redirect server and passing Google's app-verification review; not worth it for a personal client. You authenticate with a per-app password instead.
+Pigeon is **IMAP + SMTP only, no OAuth**. OAuth would mean running a redirect server and passing Google's app-verification review; not worth it for a personal client. You authenticate with a per-app password instead.
 There is maybe a day where I implement the server so others can "roll their own" OAuth, but that day is not today.
 
 ### Gmail
@@ -68,7 +68,7 @@ There is maybe a day where I implement the server so others can "roll their own"
 2. Create an **App Password** at <https://myaccount.google.com/apppasswords>.
 3. Add the account in Pigeon using that 16-character password
 
-Defaults: IMAP `imap.gmail.com:993` (TLS), SMTP `smtp.gmail.com:587` (STARTTLS). Any other provider works too — just supply its IMAP/SMTP host, ports, and an app password.
+Defaults: IMAP `imap.gmail.com:993` (TLS), SMTP `smtp.gmail.com:587` (STARTTLS). Any other provider works just supply its IMAP/SMTP host, ports, and an app password.
 
 ## Roadmap
 
