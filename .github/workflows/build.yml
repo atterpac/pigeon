@@ -31,6 +31,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # OS deps must come before any Go build: `go install wails3` (and the bundle)
+      # compile wails' cgo packages, which pkg-config against the GTK/WebKit libs.
+
+      # Linux: GTK4 + WebKitGTK 6.0 — the webview stack Wails v3 builds by default
+      # (the GTK3 stack only applies with `-tags gtk3`).
+      - name: Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+
+      # Windows: makensis for the NSIS installer step.
+      - name: Windows deps
+        if: runner.os == 'Windows'
+        run: |
+          choco install nsis -y
+          echo "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -49,21 +67,6 @@ jobs:
 
       - name: Install wails3 CLI
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha2.106
-
-      # Linux: GTK4 + WebKitGTK 6.0 — the webview stack Wails v3 builds by default
-      # (the GTK3 stack only applies with `-tags gtk3`).
-      - name: Linux deps
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
-
-      # Windows: makensis for the NSIS installer step.
-      - name: Windows deps
-        if: runner.os == 'Windows'
-        run: |
-          choco install nsis -y
-          echo "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
 
       - name: Bundle
         # extract-and-run lets appimagetool package without FUSE on the runner.

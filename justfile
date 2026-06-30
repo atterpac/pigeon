@@ -109,7 +109,7 @@ bundle: build-frontend generate-icons
     just build
     rm -f cmd/email/wails_windows_{{goarch}}.syso
     wails3 generate webview2bootstrapper -dir build/windows/nsis
-    cd build/windows/nsis && makensis -DARG_WAILS_{{uppercase(goarch)}}_BINARY="{{justfile_directory()}}/{{out}}" project.nsi
+    cd build/windows/nsis && makensis -DARG_WAILS_{{uppercase(goarch)}}_BINARY="{{justfile_directory()}}\{{replace(out, '/', '\')}}" project.nsi
 
 # run the app for local dev (macOS uses the .app so notifications get a bundle id; Linux/Windows exec the binary)
 [macos]
