@@ -66,10 +66,6 @@ func (e *Engine) Move(ctx context.Context, acct model.AccountID, ids []model.Mes
 	deltas := make([]store.FlagDelta, len(ids))
 	for i, id := range ids {
 		d := store.FlagDelta{ID: id, AddLabels: []model.LabelID{dst}}
-		// Moving *out* of the inbox drops the INBOX label. Moving *into* it must
-		// NOT also remove INBOX — adds run before removes in ApplyFlagDeltas, so
-		// add+remove of the same label cancels out and leaves the message in no
-		// mailbox (this is what broke undo-archive: the mail never reappeared).
 		if dst != "INBOX" {
 			d.RemoveLabels = []model.LabelID{"INBOX"}
 		}

@@ -483,7 +483,7 @@ function bodyParagraphs(parts: BindingPart[], fallback: string): string[] {
   return splitBody(text || fallback || '(No message body loaded.)')
 }
 
-// Surface attachment-part metadata for display. Bytes are NOT carried here — the
+// Surface attachment-part metadata for display. Bytes are not carried the
 // download is performed backend-side by SaveAttachment, which re-derives the
 // same attachment ordering (parts with Disposition === 'attachment'), so `index`
 // lines up 1:1 on both ends.
