@@ -171,9 +171,10 @@ fmt:
 fmt-check:
     @test -z "$(gofmt -l .)" || { echo "needs gofmt:"; gofmt -l .; exit 1; }
 
-# staticcheck (requires honnef.co/go/tools/cmd/staticcheck)
+
+# golangci-lint (config in .golangci.yml; requires golangci-lint v2)
 lint:
-    staticcheck ./...
+    golangci-lint run ./...
 
 # tidy + verify modules
 tidy:

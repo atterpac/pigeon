@@ -534,7 +534,7 @@ func (p *Provider) Close() error {
 	p.fgConnMu.Lock()
 	defer p.fgConnMu.Unlock()
 	if p.fgC != nil {
-		p.fgC.Logout().Wait()
+		_ = p.fgC.Logout().Wait() // best-effort teardown
 		p.fgC.Close()
 		p.fgC = nil
 		p.fgSelected = ""

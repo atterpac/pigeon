@@ -1,0 +1,45 @@
+name: checks
+
+# Fast PR gate: format, vet, compile, and lint. No bundling/tests — see build.yml
+# for the heavier per-OS packaging.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # GTK4 + WebKitGTK 6.0: our code imports the wails cgo packages, so vet,
+      # build, and golangci-lint all need these to type-check.
+      - name: Linux deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: extractions/setup-just@v2
+
+      - name: Format (gofmt)
+        run: just fmt-check
+      - name: Vet
+        run: just vet
+      - name: Compile
+        run: just check
+
+      - name: golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/v2.12.2/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" v2.12.2
+          PATH="$(go env GOPATH)/bin:$PATH" just golangci

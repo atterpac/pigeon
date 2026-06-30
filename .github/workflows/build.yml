@@ -5,14 +5,13 @@ name: build
 # ships. So each target builds natively on its own runner via `just bundle`.
 # (Windows alone could be cross-compiled pure-Go — see `just xbuild-windows`.)
 #
-# On a `v*` tag push, the release job gathers every runner's bundle into one
-# GitHub Release with checksums — no GoReleaser needed.
+# Release only: runs on `v*` tag pushes (or manual dispatch). Each runner's
+# bundle is gathered into one GitHub Release with checksums — no GoReleaser.
+# Day-to-day push/PR validation lives in checks.yml.
 
 on:
   push:
-    branches: [main]
     tags: ['v*']
-  pull_request:
   workflow_dispatch:
 
 permissions:

@@ -1,0 +1,23 @@
+version: "2"
+
+# Quick correctness-focused linters for the PR gate. errcheck/govet/ineffassign/
+# staticcheck/unused are the golangci-lint "standard" set; kept explicit for clarity.
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  settings:
+    staticcheck:
+      checks:
+        - all
+        - -QF1001 # De Morgan's-law rewrite — stylistic, not a bug
+  exclusions:
+    paths:
+      - ^build/ # Wails template/packaging stubs (ios/android), not app code
+    rules:
+      # Cleanup errors on Close()/Rollback() are conventionally ignored.
+      - linters: [errcheck]
+        source: '\.(Close|Rollback)\(\)'
