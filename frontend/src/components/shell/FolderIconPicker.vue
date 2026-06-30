@@ -115,7 +115,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
     </div>
 
     <div class="fip-right">
-      <div class="fip-search"><PhMagnifyingGlass :size="14" /><span>{{ query || 'Search icons' }}<i v-if="query" class="caret" /></span></div>
+      <div class="fip-search"><PhMagnifyingGlass :size="14" /><span>{{ query }}<i class="caret" /></span></div>
       <div class="fip-grid">
         <button
           v-for="(it, i) in visible"
@@ -169,8 +169,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
 .fip-assign { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; margin-top: auto; border: 1px solid var(--accent-line); border-radius: 11px; background: var(--accent-soft); color: var(--accent); padding: 11px; font-size: 13px }
 
 .fip-right { display: flex; flex-direction: column; gap: 10px; padding: 16px }
-.fip-search { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--border-2); border-radius: 10px; background: var(--surface-3); color: var(--text-mut); font: 12px "JetBrains Mono", ui-monospace, monospace }
-.fip-search span { color: var(--text) }
+/* Right margin keeps the bar clear of the absolute close button (.fip-x), so
+   clicking the search bar can't accidentally land on (and trigger) Close. */
+.fip-search { display: flex; align-items: center; gap: 8px; margin-right: 30px; padding: 8px 12px; border: 1px solid var(--border-2); border-radius: 10px; background: var(--surface-3); color: var(--text-mut); font: 12px "JetBrains Mono", ui-monospace, monospace }
+.fip-search span { display: inline-flex; align-items: center; min-height: 1.05em; color: var(--text) }
 .fip-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; align-content: start; min-height: 160px }
 .fip-grid .cell { display: grid; place-items: center; aspect-ratio: 1; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text-dim) }
 .fip-grid .cell:hover { color: var(--text) }

@@ -1,6 +1,14 @@
-# Pigeon
+<p align="center">
+  <img src="build/appicon.png" width="128" alt="Pigeon" />
+</p>
 
-A keyboard-focused email client. Go + Vue, built with [Wails 3](https://v3.wails.io).
+<h1 align="center">Pigeon</h1>
+
+<p align="center">A keyboard-focused email client. Go + Vue, built with <a href="https://v3.wails.io">Wails 3</a>.</p>
+
+<p align="center">
+  <img src="assets/pigeon-thread.png" width="880" alt="Pigeon reading a thread" />
+</p>
 
 ## Features
 
@@ -12,6 +20,19 @@ A keyboard-focused email client. Go + Vue, built with [Wails 3](https://v3.wails
 - **Notifications** — native configurable desktop alerts with modes (all / inbox-only / off), muted senders, quiet hours.
 - **Privacy** — remote images blocked by default, so tracking pixels never fire on open (load per-message when you choose).
 - **Customizable UI** — themes, density, and swappable compose / sidebar / nav / settings layouts.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%" valign="top"><b>Keyboard triage</b> — the leader menu: archive, snooze, label, move, delete.<br/><img src="assets/pigeon-manage.png" alt="Pigeon triage leader menu" /></td>
+    <td width="50%" valign="top"><b>Compose</b> — vim-style line-numbered composer with draft autosave.<br/><img src="assets/pigeon-compose.png" alt="Pigeon compose window" /></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><b>Folder icon studio</b> — assign an icon, weight, and color.<br/><img src="assets/pigeon-studio.png" alt="Pigeon folder icon studio" /></td>
+    <td width="50%" valign="top"><b>Settings</b> — themes, density, vim mode, remote-image blocking.<br/><img src="assets/pigeon-settings.png" alt="Pigeon settings" /></td>
+  </tr>
+</table>
 
 ## Build from source
 
