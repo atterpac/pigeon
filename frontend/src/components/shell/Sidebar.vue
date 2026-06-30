@@ -163,6 +163,7 @@ function accountInitial(acc: Pick<ConfiguredAccount, 'name' | 'email'> | null | 
       <span aria-hidden="true">{{ settings.navCollapsed ? '::' : '::' }}</span>
     </button>
 
+    <div class="sidebar-nav">
     <template v-if="showAccounts && s.configuredAccounts.value.length > 1">
       <p v-if="showHeads" class="grouphead">Accounts</p>
       <nav class="navgroup">
@@ -250,6 +251,7 @@ function accountInitial(acc: Pick<ConfiguredAccount, 'name' | 'email'> | null | 
         </div>
       </nav>
     </template>
+    </div>
 
     <div class="account-wrap sidebar-account-bottom">
       <button class="account account-command-trigger" type="button" aria-label="Account menu" aria-haspopup="menu" :aria-expanded="accountMenuOpen" @click="toggleAccountMenu">

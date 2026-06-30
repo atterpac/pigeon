@@ -284,7 +284,10 @@ kbd { color: var(--text-mut); font: 11px "JetBrains Mono", ui-monospace, monospa
 [data-density="compact"] .thread-messages article { padding-top: 14px; padding-bottom: 14px }
 
 /* ── Sidebar (flat) ───────────────────────────────────────────────────── */
-.sidebar { position: relative; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border-2); border-radius: 16px; padding: 16px 12px; font-size: 13.5px; overflow: visible; box-shadow: var(--shadow-2) }
+.sidebar { position: relative; display: flex; flex-direction: column; min-height: 0; background: var(--surface); border: 1px solid var(--border-2); border-radius: 16px; padding: 16px 12px; font-size: 13.5px; overflow: visible; box-shadow: var(--shadow-2) }
+/* Scrollable nav region: brand stays pinned at top, account at bottom, so a tall
+   mailbox list scrolls internally instead of spilling over the modeline. */
+.sidebar-nav { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column }
 .sidebar-brand { display: flex; align-items: center; gap: 11px; min-height: 46px; padding: 0 10px 14px }
 .sidebar-brand-logo { flex: none; width: 32px; height: 36px; display: block; object-fit: contain }
 .account { display: grid; grid-template-columns: 34px 1fr 12px; gap: 10px; align-items: center; width: 100%; padding: 9px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--border-2); color: var(--text); text-align: left }
