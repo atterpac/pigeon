@@ -3,26 +3,26 @@
 #
 # The lines below are called `modelines`. See `:help modeline`
 
-name: "tempwails"
+name: "pigeon"
 arch: ${GOARCH}
 platform: "linux"
 version: "0.1.0"
 section: "default"
 priority: "extra"
 maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
-description: "A tempwails application"
-vendor: "My Company"
-homepage: "https://wails.io"
+description: "A keyboard focused email client"
+vendor: "Atterpac"
+homepage: "https://github.com/atterpac/pigeon"
 license: "MIT"
 release: "1"
 
 contents:
-  - src: "./bin/tempwails"
-    dst: "/usr/local/bin/tempwails"
+  - src: "./bin/Pigeon"
+    dst: "/usr/local/bin/Pigeon"
   - src: "./build/appicon.png"
-    dst: "/usr/share/icons/hicolor/128x128/apps/tempwails.png"
-  - src: "./build/linux/tempwails.desktop"
-    dst: "/usr/share/applications/tempwails.desktop"
+    dst: "/usr/share/icons/hicolor/128x128/apps/Pigeon.png"
+  - src: "./build/linux/Pigeon.desktop"
+    dst: "/usr/share/applications/Pigeon.desktop"
 
 # Default dependencies for the GTK4 + WebKitGTK 6.0 stack (Ubuntu 24.04+ / Debian 13+)
 depends:

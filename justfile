@@ -109,7 +109,30 @@ bundle: build-frontend generate-icons
     just build
     rm -f cmd/email/wails_windows_{{goarch}}.syso
     wails3 generate webview2bootstrapper -dir build/windows/nsis
-    cd build/windows/nsis && makensis -DARG_WAILS_{{uppercase(goarch)}}_BINARY="{{justfile_directory()}}\{{replace(out, '/', '\')}}" project.nsi
+    cd build/windows/nsis && makensis -DINFO_PROJECTNAME={{app}} -DINFO_PRODUCTNAME={{app}} -DINFO_COMPANYNAME=Atterpac -DARG_WAILS_{{uppercase(goarch)}}_BINARY="{{justfile_directory()}}\{{replace(out, '/', '\')}}" project.nsi
+
+# build every distributable format available for the host OS (mac: .app + .dmg / linux: AppImage + deb + rpm + arch / win: NSIS)
+[macos]
+bundle-full: bundle
+    # .dmg built with hdiutil; Wails' own dmg packager is disabled in this version
+    rm -rf bin/dmg bin/{{app}}.dmg
+    mkdir -p bin/dmg
+    cp -R {{release_app}} bin/dmg/
+    ln -s /Applications bin/dmg/Applications
+    hdiutil create -volname {{app}} -srcfolder bin/dmg -ov -format UDZO bin/{{app}}.dmg
+    rm -rf bin/dmg
+
+# Linux: AppImage (from bundle) + deb + rpm + archlinux (nfpm, no extra tooling).
+[linux]
+bundle-full: bundle
+    GOARCH={{goarch}} wails3 tool package -name {{app}} -format deb -config build/linux/nfpm/nfpm.yaml -out bin
+    GOARCH={{goarch}} wails3 tool package -name {{app}} -format rpm -config build/linux/nfpm/nfpm.yaml -out bin
+    GOARCH={{goarch}} wails3 tool package -name {{app}} -format archlinux -config build/linux/nfpm/nfpm.yaml -out bin
+
+# Windows: NSIS installer only — this Wails version ships no msix tooling.
+[windows]
+bundle-full: bundle
+    @echo "Windows: NSIS installer only (no msix tool in this Wails version)"
 
 # run the app for local dev (macOS uses the .app so notifications get a bundle id; Linux/Windows exec the binary)
 [macos]

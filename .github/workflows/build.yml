@@ -72,25 +72,27 @@ jobs:
         # extract-and-run lets appimagetool package without FUSE on the runner.
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
-        run: just bundle
+        run: just bundle-full
 
       # Normalize each OS's output into single-file release assets under dist/.
-      # The macOS .app is a directory, so it must be zipped to ship as one asset.
+      # macOS ships the .dmg plus a zipped .app (the .app is a directory, so it
+      # can't be a release asset on its own).
       - name: Stage assets (macOS)
         if: runner.os == 'macOS'
         run: |
           mkdir -p dist
           ditto -c -k --keepParent bin/Pigeon.app "dist/Pigeon-macos-universal.app.zip"
+          cp bin/Pigeon.dmg "dist/Pigeon-macos-universal.dmg"
       - name: Stage assets (Linux)
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist
-          cp bin/*.AppImage dist/
+          cp bin/*.AppImage bin/*.deb bin/*.rpm bin/*.pkg.tar.zst dist/
       - name: Stage assets (Windows)
         if: runner.os == 'Windows'
         run: |
           mkdir dist
-          Copy-Item bin\Pigeon-amd64-installer.exe dist\
+          Copy-Item bin\*-installer.exe dist\
 
       - uses: actions/upload-artifact@v4
         with:

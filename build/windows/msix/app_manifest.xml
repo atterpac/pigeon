@@ -7,16 +7,16 @@
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   IgnorableNamespaces="uap3">
   
-  <Identity 
-    Name="com.example.tempwails"
-    Publisher="CN=My Company"
-    Version="0.1.0.0" 
+  <Identity
+    Name="com.atterpac.pigeon"
+    Publisher="CN=Atterpac"
+    Version="0.1.0.0"
     ProcessorArchitecture="x64" />
-  
+
   <Properties>
-    <DisplayName>My Product</DisplayName>
-    <PublisherDisplayName>My Company</PublisherDisplayName>
-    <Description>A tempwails application</Description>
+    <DisplayName>Pigeon</DisplayName>
+    <PublisherDisplayName>Atterpac</PublisherDisplayName>
+    <Description>A keyboard focused email client</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
   
@@ -29,10 +29,10 @@
   </Resources>
   
   <Applications>
-    <Application Id="com.example.tempwails" Executable="tempwails" EntryPoint="Windows.FullTrustApplication">
+    <Application Id="Pigeon" Executable="Pigeon.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="My Product"
-        Description="A tempwails application"
+        DisplayName="Pigeon"
+        Description="A keyboard focused email client"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">
@@ -41,7 +41,7 @@
       </uap:VisualElements>
       
       <Extensions>
-        <desktop:Extension Category="windows.fullTrustProcess" Executable="tempwails" />
+        <desktop:Extension Category="windows.fullTrustProcess" Executable="Pigeon.exe" />
         
         
       </Extensions>

@@ -8,27 +8,27 @@
         AllowPromptForPassword="false">
     </Settings>
     <Installer
-        Path="tempwails"
+        Path="Pigeon.exe"
         Arguments=""
-        InstallLocation="C:\Program Files\My Company\My Product">
+        InstallLocation="C:\Program Files\Atterpac\Pigeon">
     </Installer>
     <PackageInformation
-        PackageName="My Product"
-        PackageDisplayName="My Product"
-        PublisherName="CN=My Company"
-        PublisherDisplayName="My Company"
+        PackageName="Pigeon"
+        PackageDisplayName="Pigeon"
+        PublisherName="CN=Atterpac"
+        PublisherDisplayName="Atterpac"
         Version="0.1.0.0"
-        PackageDescription="A tempwails application">
+        PackageDescription="A keyboard focused email client">
         <Capabilities>
             <Capability Name="runFullTrust" />
             
         </Capabilities>
         <Applications>
             <Application
-                Id="com.example.tempwails"
-                Description="A tempwails application"
-                DisplayName="My Product"
-                ExecutableName="tempwails"
+                Id="Pigeon"
+                Description="A keyboard focused email client"
+                DisplayName="Pigeon"
+                ExecutableName="Pigeon.exe"
                 EntryPoint="Windows.FullTrustApplication">
                 
             </Application>
@@ -41,13 +41,13 @@
         </Dependencies>
         <Properties>
             <Framework>false</Framework>
-            <DisplayName>My Product</DisplayName>
-            <PublisherDisplayName>My Company</PublisherDisplayName>
-            <Description>A tempwails application</Description>
+            <DisplayName>Pigeon</DisplayName>
+            <PublisherDisplayName>Atterpac</PublisherDisplayName>
+            <Description>A keyboard focused email client</Description>
             <Logo>Assets\AppIcon.png</Logo>
         </Properties>
     </PackageInformation>
-    <SaveLocation PackagePath="tempwails.msix" />
+    <SaveLocation PackagePath="Pigeon.msix" />
     <PackageIntegrity>
         <CertificatePath></CertificatePath>
     </PackageIntegrity>
