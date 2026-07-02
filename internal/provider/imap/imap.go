@@ -20,8 +20,8 @@ import (
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-sasl"
 
-	"github.com/atterpac/email/internal/model"
-	"github.com/atterpac/email/internal/provider"
+	"github.com/atterpac/pigeon/internal/model"
+	"github.com/atterpac/pigeon/internal/provider"
 )
 
 // Config describes how to connect to an IMAP account. Authentication is a plain

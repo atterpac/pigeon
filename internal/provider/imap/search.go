@@ -9,8 +9,8 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 
-	"github.com/atterpac/email/internal/model"
-	"github.com/atterpac/email/internal/provider"
+	"github.com/atterpac/pigeon/internal/model"
+	"github.com/atterpac/pigeon/internal/provider"
 )
 
 // Search runs a server-side UID SEARCH over the mailbox and returns matching

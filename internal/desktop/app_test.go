@@ -3,8 +3,8 @@ package desktop
 import (
 	"testing"
 
-	"github.com/atterpac/email/internal/email"
-	"github.com/atterpac/email/internal/provider/imap"
+	"github.com/atterpac/pigeon/internal/email"
+	"github.com/atterpac/pigeon/internal/provider/imap"
 )
 
 func TestApplyIMAPEndpoints(t *testing.T) {

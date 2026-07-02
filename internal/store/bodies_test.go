@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atterpac/email/internal/events"
-	"github.com/atterpac/email/internal/mime"
-	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/pigeon/internal/events"
+	"github.com/atterpac/pigeon/internal/mime"
+	"github.com/atterpac/pigeon/internal/model"
 )
 
 func TestSaveBodyParsesAttachmentsAndIndexes(t *testing.T) {

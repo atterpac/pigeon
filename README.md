@@ -53,7 +53,7 @@ just bundle         # distributable for the host OS (see below)
 just run            # build frontend + launch for local dev
 ```
 
-`just bundle` dispatches by host OS: macOS `.app`, Linux AppImage, Windows NSIS installer — all into `bin/`. Cross-OS bundling isn't supported; build each target on its own OS. `just build-frontend` regenerates Wails bindings, builds the Vue app, and copies it to `cmd/email/dist`.
+`just bundle` dispatches by host OS: macOS `.app`, Linux AppImage, Windows NSIS installer — all into `bin/`. Cross-OS bundling isn't supported; build each target on its own OS. `just build-frontend` regenerates Wails bindings, builds the Vue app, and copies it to `cmd/pigeon/dist`.
 
 Run `just` (no args) for the full recipe list.
 

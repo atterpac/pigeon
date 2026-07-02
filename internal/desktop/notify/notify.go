@@ -14,9 +14,9 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 
-	"github.com/atterpac/email/internal/email"
-	"github.com/atterpac/email/internal/model"
-	"github.com/atterpac/email/internal/provider"
+	"github.com/atterpac/pigeon/internal/email"
+	"github.com/atterpac/pigeon/internal/model"
+	"github.com/atterpac/pigeon/internal/provider"
 )
 
 // Prefs controls which new mail raises a desktop notification.

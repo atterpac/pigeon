@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/pigeon/internal/model"
 )
 
 func TestBuildParses(t *testing.T) {

@@ -11,8 +11,8 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-smtp"
 
-	"github.com/atterpac/email/internal/model"
-	"github.com/atterpac/email/internal/provider"
+	"github.com/atterpac/pigeon/internal/model"
+	"github.com/atterpac/pigeon/internal/provider"
 )
 
 // Send delivers a raw message over SMTP (STARTTLS) authenticated with the same

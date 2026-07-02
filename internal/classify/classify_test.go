@@ -3,7 +3,7 @@ package classify
 import (
 	"testing"
 
-	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/pigeon/internal/model"
 )
 
 func TestProviderCategoryLabelsWin(t *testing.T) {

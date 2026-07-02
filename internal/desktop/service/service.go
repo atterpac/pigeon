@@ -13,7 +13,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/atterpac/email/internal/email"
+	"github.com/atterpac/pigeon/internal/email"
 )
 
 // Mailboxes exposes account listing and folder/label topology + CRUD.

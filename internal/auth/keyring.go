@@ -9,7 +9,7 @@ import (
 )
 
 // keyringService is the namespace credentials are stored under in the OS keyring.
-const keyringService = "github.com/atterpac/email"
+const keyringService = "github.com/atterpac/pigeon"
 
 // Keyring is a CredentialStore backed by the OS keyring (Secret Service on
 // Linux, Keychain on macOS, Credential Manager on Windows).

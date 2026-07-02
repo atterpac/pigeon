@@ -10,9 +10,9 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/atterpac/email/internal/model"
-	"github.com/atterpac/email/internal/provider"
-	synceng "github.com/atterpac/email/internal/sync"
+	"github.com/atterpac/pigeon/internal/model"
+	"github.com/atterpac/pigeon/internal/provider"
+	synceng "github.com/atterpac/pigeon/internal/sync"
 )
 
 // cmdDaemon runs the continuous background sync loop for an account: forward

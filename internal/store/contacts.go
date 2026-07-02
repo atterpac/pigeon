@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atterpac/email/internal/model"
-	gen "github.com/atterpac/email/internal/store/db"
+	"github.com/atterpac/pigeon/internal/model"
+	gen "github.com/atterpac/pigeon/internal/store/db"
 )
 
 // harvestContacts upserts the address-book entries for one message's envelope

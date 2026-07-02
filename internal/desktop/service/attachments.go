@@ -9,7 +9,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
-	"github.com/atterpac/email/internal/email"
+	"github.com/atterpac/pigeon/internal/email"
 )
 
 // SaveAttachment writes the index-th attachment of a message to disk. When

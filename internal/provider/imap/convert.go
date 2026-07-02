@@ -9,8 +9,8 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 
-	"github.com/atterpac/email/internal/model"
-	"github.com/atterpac/email/internal/provider"
+	"github.com/atterpac/pigeon/internal/model"
+	"github.com/atterpac/pigeon/internal/provider"
 )
 
 // messageID builds the SDK-internal id for an IMAP message. IMAP has no stable

@@ -1,6 +1,6 @@
 // Package desktop is the backend of the Pigeon desktop app: it owns the email
 // SDK client and the provider/credential wiring, ties that runtime to the Wails
-// application lifecycle, and exposes runtime sync controls. The thin cmd/email
+// application lifecycle, and exposes runtime sync controls. The thin cmd/pigeon
 // main only constructs it and registers the Wails services. Frontend-facing
 // facade services live in the sibling onboard/ and service/ packages.
 package desktop
@@ -13,11 +13,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/atterpac/email/internal/auth"
-	"github.com/atterpac/email/internal/desktop/notify"
-	"github.com/atterpac/email/internal/email"
-	"github.com/atterpac/email/internal/provider"
-	"github.com/atterpac/email/internal/provider/imap"
+	"github.com/atterpac/pigeon/internal/auth"
+	"github.com/atterpac/pigeon/internal/desktop/notify"
+	"github.com/atterpac/pigeon/internal/email"
+	"github.com/atterpac/pigeon/internal/provider"
+	"github.com/atterpac/pigeon/internal/provider/imap"
 )
 
 // App owns the email SDK client and the secrets it needs to build providers.

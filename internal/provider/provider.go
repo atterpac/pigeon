@@ -7,7 +7,7 @@ package provider
 import (
 	"context"
 
-	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/pigeon/internal/model"
 )
 
 // Cursor is an opaque, provider-specific sync position. For Gmail it wraps a

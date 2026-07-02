@@ -3,7 +3,7 @@ package desktop
 import (
 	"context"
 
-	"github.com/atterpac/email/internal/desktop/notify"
+	"github.com/atterpac/pigeon/internal/desktop/notify"
 )
 
 // SyncSettings is the thin Wails service that exposes runtime sync controls to

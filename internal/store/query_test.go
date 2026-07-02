@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/pigeon/internal/model"
 )
 
 func seed(t *testing.T) (*Store, context.Context, model.AccountID) {

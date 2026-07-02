@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/atterpac/email/internal/model"
-	"github.com/atterpac/email/internal/provider"
-	"github.com/atterpac/email/internal/store"
+	"github.com/atterpac/pigeon/internal/model"
+	"github.com/atterpac/pigeon/internal/provider"
+	"github.com/atterpac/pigeon/internal/store"
 )
 
 // OpSend is the outbox op type for outbound message delivery.

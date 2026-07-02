@@ -16,13 +16,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/atterpac/email/internal/blob"
-	"github.com/atterpac/email/internal/events"
-	"github.com/atterpac/email/internal/mime"
-	"github.com/atterpac/email/internal/model"
-	"github.com/atterpac/email/internal/provider"
-	"github.com/atterpac/email/internal/store"
-	synceng "github.com/atterpac/email/internal/sync"
+	"github.com/atterpac/pigeon/internal/blob"
+	"github.com/atterpac/pigeon/internal/events"
+	"github.com/atterpac/pigeon/internal/mime"
+	"github.com/atterpac/pigeon/internal/model"
+	"github.com/atterpac/pigeon/internal/provider"
+	"github.com/atterpac/pigeon/internal/store"
+	synceng "github.com/atterpac/pigeon/internal/sync"
 )
 
 // Re-exported domain types so callers depend only on this package.

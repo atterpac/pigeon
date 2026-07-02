@@ -13,7 +13,7 @@ import (
 	_ "github.com/emersion/go-message/charset"
 	gomail "github.com/emersion/go-message/mail"
 
-	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/pigeon/internal/model"
 )
 
 // MaxPartBytes bounds the decoded size of any single MIME part that Parse will

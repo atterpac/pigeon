@@ -1,5 +1,5 @@
-import * as Onboarding from '../bindings/github.com/atterpac/email/internal/desktop/onboard/onboarding'
-import type { Account as BindingAccount } from '../bindings/github.com/atterpac/email/internal/email/models'
+import * as Onboarding from '../bindings/github.com/atterpac/pigeon/internal/desktop/onboard/onboarding'
+import type { Account as BindingAccount } from '../bindings/github.com/atterpac/pigeon/internal/email/models'
 
 export type SetupMethod = 'appPassword' | 'imap'
 

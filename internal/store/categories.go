@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/atterpac/email/internal/classify"
-	"github.com/atterpac/email/internal/events"
-	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/pigeon/internal/classify"
+	"github.com/atterpac/pigeon/internal/events"
+	"github.com/atterpac/pigeon/internal/model"
 )
 
 // ReclassifyMailbox recalculates categories for recent messages in a mailbox.

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atterpac/email/internal/model"
-	gen "github.com/atterpac/email/internal/store/db"
+	"github.com/atterpac/pigeon/internal/model"
+	gen "github.com/atterpac/pigeon/internal/store/db"
 )
 
 func gmGetMessageParams(acct model.AccountID, id model.MessageID) gen.GetMessageParams {

@@ -10,9 +10,9 @@ import (
 	"log"
 	"strings"
 
-	"github.com/atterpac/email/internal/auth"
-	"github.com/atterpac/email/internal/desktop"
-	"github.com/atterpac/email/internal/email"
+	"github.com/atterpac/pigeon/internal/auth"
+	"github.com/atterpac/pigeon/internal/desktop"
+	"github.com/atterpac/pigeon/internal/email"
 )
 
 // Onboarding is a Wails service for adding, listing, and removing mail

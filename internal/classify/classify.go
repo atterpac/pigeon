@@ -6,7 +6,7 @@ import (
 	"net/textproto"
 	"strings"
 
-	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/pigeon/internal/model"
 )
 
 // Input is the metadata used to classify a message. Headers should use their

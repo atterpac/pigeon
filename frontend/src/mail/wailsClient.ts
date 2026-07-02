@@ -1,17 +1,17 @@
-import * as Mailboxes from '../bindings/github.com/atterpac/email/internal/desktop/service/mailboxes'
-import * as Messages from '../bindings/github.com/atterpac/email/internal/desktop/service/messages'
-import * as Mutations from '../bindings/github.com/atterpac/email/internal/desktop/service/mutations'
-import * as Compose from '../bindings/github.com/atterpac/email/internal/desktop/service/compose'
-import * as Snooze from '../bindings/github.com/atterpac/email/internal/desktop/service/snooze'
-import * as ContactsBinding from '../bindings/github.com/atterpac/email/internal/desktop/service/contacts'
-import { Address as BindingAddress, Flag, Outgoing } from '../bindings/github.com/atterpac/email/internal/model/models'
+import * as Mailboxes from '../bindings/github.com/atterpac/pigeon/internal/desktop/service/mailboxes'
+import * as Messages from '../bindings/github.com/atterpac/pigeon/internal/desktop/service/messages'
+import * as Mutations from '../bindings/github.com/atterpac/pigeon/internal/desktop/service/mutations'
+import * as Compose from '../bindings/github.com/atterpac/pigeon/internal/desktop/service/compose'
+import * as Snooze from '../bindings/github.com/atterpac/pigeon/internal/desktop/service/snooze'
+import * as ContactsBinding from '../bindings/github.com/atterpac/pigeon/internal/desktop/service/contacts'
+import { Address as BindingAddress, Flag, Outgoing } from '../bindings/github.com/atterpac/pigeon/internal/model/models'
 import type {
   Account as BindingAccount,
   Mailbox as BindingMailbox,
   Message as BindingMessage,
   Part as BindingPart,
   ThreadListItem,
-} from '../bindings/github.com/atterpac/email/internal/email/models'
+} from '../bindings/github.com/atterpac/pigeon/internal/email/models'
 import type { Account, Address, Category, ComposeDraft, Contact, Conversation, Label, Mailbox, MailClient, MessageAttachment, Thread, ThreadMessage } from './types'
 import { stripSignature } from './drafts'
 import { renderMarkdown } from './format'

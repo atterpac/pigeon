@@ -1,4 +1,4 @@
-module github.com/atterpac/email
+module github.com/atterpac/pigeon
 
 go 1.26.1
 

@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atterpac/email/internal/mime"
-	"github.com/atterpac/email/internal/model"
-	"github.com/atterpac/email/internal/provider"
-	synceng "github.com/atterpac/email/internal/sync"
+	"github.com/atterpac/pigeon/internal/mime"
+	"github.com/atterpac/pigeon/internal/model"
+	"github.com/atterpac/pigeon/internal/provider"
+	synceng "github.com/atterpac/pigeon/internal/sync"
 )
 
 // cmdSend composes a message, queues it in the outbox, and drains once so it is

@@ -6,7 +6,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/pigeon/internal/model"
 )
 
 // searchQuery is a parsed search expression: free-text FTS terms plus filters.

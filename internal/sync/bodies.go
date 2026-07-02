@@ -7,11 +7,11 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/atterpac/email/internal/classify"
-	"github.com/atterpac/email/internal/mime"
-	"github.com/atterpac/email/internal/model"
-	"github.com/atterpac/email/internal/provider"
-	"github.com/atterpac/email/internal/store"
+	"github.com/atterpac/pigeon/internal/classify"
+	"github.com/atterpac/pigeon/internal/mime"
+	"github.com/atterpac/pigeon/internal/model"
+	"github.com/atterpac/pigeon/internal/provider"
+	"github.com/atterpac/pigeon/internal/store"
 )
 
 // warmChunk is the number of bodies fetched per launch-warm round. Warming in

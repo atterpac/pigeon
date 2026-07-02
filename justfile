@@ -3,7 +3,7 @@ app := "Pigeon"
 goarch := if arch() == "x86_64" { "amd64" } else if arch() == "aarch64" { "arm64" } else { arch() }
 ext := if os() == "windows" { ".exe" } else { "" }
 out := "bin/" + app + ext
-pkg := "./cmd/email"
+pkg := "./cmd/pigeon"
 dev_app := "bin/" + app + ".dev.app"
 release_app := "bin/" + app + ".app"
 
@@ -36,16 +36,16 @@ migrate-down:
 migrate-status:
     GOOSE_DBSTRING={{dev_db}} goose status
 
-# build the Vue frontend into frontend/dist and copy it to cmd/email/dist
+# build the Vue frontend into frontend/dist and copy it to cmd/pigeon/dist
 build-frontend:
     just bindings
     cd frontend && if [ ! -d node_modules ]; then pnpm install --frozen-lockfile; fi && pnpm build-only
-    rm -rf cmd/email/dist
-    cp -r frontend/dist cmd/email/dist
+    rm -rf cmd/pigeon/dist
+    cp -r frontend/dist cmd/pigeon/dist
 
 # generate Wails frontend bindings from the Go services
 bindings:
-    cd cmd/email && wails3 generate bindings -ts -d ../../frontend/src/bindings
+    cd cmd/pigeon && wails3 generate bindings -ts -d ../../frontend/src/bindings
 
 # build the desktop binary into bin/
 build:
@@ -105,9 +105,9 @@ bundle: build-frontend build
 # Windows: embed icon/manifest via .syso, build, then NSIS installer (needs makensis)
 [windows]
 bundle: build-frontend generate-icons
-    wails3 generate syso -arch {{goarch}} -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info build/windows/info.json -out cmd/email/wails_windows_{{goarch}}.syso
+    wails3 generate syso -arch {{goarch}} -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info build/windows/info.json -out cmd/pigeon/wails_windows_{{goarch}}.syso
     just build
-    rm -f cmd/email/wails_windows_{{goarch}}.syso
+    rm -f cmd/pigeon/wails_windows_{{goarch}}.syso
     wails3 generate webview2bootstrapper -dir build/windows/nsis
     cd build/windows/nsis && makensis -DINFO_PROJECTNAME={{app}} -DINFO_PRODUCTNAME={{app}} -DINFO_COMPANYNAME=Atterpac -DARG_WAILS_{{uppercase(goarch)}}_BINARY="{{justfile_directory()}}\{{replace(out, '/', '\')}}" project.nsi
 

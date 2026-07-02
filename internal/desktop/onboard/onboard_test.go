@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/atterpac/email/internal/auth"
-	"github.com/atterpac/email/internal/email"
+	"github.com/atterpac/pigeon/internal/auth"
+	"github.com/atterpac/pigeon/internal/email"
 )
 
 // fakeCreds is an in-memory auth.CredentialStore that records writes and

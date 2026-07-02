@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	gen "github.com/atterpac/email/internal/store/db"
+	gen "github.com/atterpac/pigeon/internal/store/db"
 )
 
 func TestOpenMigrateRoundTrip(t *testing.T) {

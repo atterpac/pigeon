@@ -9,8 +9,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/atterpac/email/internal/model"
-	gen "github.com/atterpac/email/internal/store/db"
+	"github.com/atterpac/pigeon/internal/model"
+	gen "github.com/atterpac/pigeon/internal/store/db"
 )
 
 // SaveDraft upserts a compose draft. If id is empty a new one is generated and

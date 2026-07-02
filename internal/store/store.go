@@ -12,10 +12,10 @@ import (
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite"
 
-	"github.com/atterpac/email/db/migrations"
-	"github.com/atterpac/email/internal/blob"
-	"github.com/atterpac/email/internal/events"
-	gen "github.com/atterpac/email/internal/store/db"
+	"github.com/atterpac/pigeon/db/migrations"
+	"github.com/atterpac/pigeon/internal/blob"
+	"github.com/atterpac/pigeon/internal/events"
+	gen "github.com/atterpac/pigeon/internal/store/db"
 )
 
 // Store wraps the SQLite database and the generated query set.

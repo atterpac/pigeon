@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/atterpac/email/internal/model"
-	"github.com/atterpac/email/internal/provider"
-	imapprov "github.com/atterpac/email/internal/provider/imap"
+	"github.com/atterpac/pigeon/internal/model"
+	"github.com/atterpac/pigeon/internal/provider"
+	imapprov "github.com/atterpac/pigeon/internal/provider/imap"
 )
 
 // imapEndpoint holds the IMAP + SMTP connection details for a provider.

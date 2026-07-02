@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atterpac/email/internal/blob"
-	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/pigeon/internal/blob"
+	"github.com/atterpac/pigeon/internal/model"
 )
 
 // seedBody opens a blob-backed store with one account and one message ready for

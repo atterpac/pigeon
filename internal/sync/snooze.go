@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/pigeon/internal/model"
 )
 
 // inboxLabel is the label re-applied when a snooze elapses.

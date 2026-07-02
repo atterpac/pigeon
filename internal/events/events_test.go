@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/pigeon/internal/model"
 )
 
 func evt() Event {

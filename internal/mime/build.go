@@ -8,7 +8,7 @@ import (
 
 	gomail "github.com/emersion/go-message/mail"
 
-	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/pigeon/internal/model"
 )
 
 // Build renders an Outgoing message to RFC 5322 bytes. Structure:

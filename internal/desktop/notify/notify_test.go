@@ -6,9 +6,9 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 
-	"github.com/atterpac/email/internal/email"
-	"github.com/atterpac/email/internal/model"
-	"github.com/atterpac/email/internal/provider"
+	"github.com/atterpac/pigeon/internal/email"
+	"github.com/atterpac/pigeon/internal/model"
+	"github.com/atterpac/pigeon/internal/provider"
 )
 
 func at(h, m int) time.Time { return time.Date(2026, 6, 27, h, m, 0, 0, time.Local) }

@@ -1,5 +1,5 @@
 // Package command implements the reference CLI for the email SDK. It is a thin
-// harness over the same internals the public email.Client uses; cmd/email just
+// harness over the same internals the public email.Client uses; cmd/pigeon just
 // calls Run. Keeping it here (rather than in package main) lets a different
 // front-end — e.g. a Wails app — own main without dragging the CLI along.
 package command
@@ -11,7 +11,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/atterpac/email/internal/auth"
+	"github.com/atterpac/pigeon/internal/auth"
 )
 
 // Run dispatches a CLI invocation. args is the argument list without the program

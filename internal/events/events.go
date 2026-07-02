@@ -8,7 +8,7 @@ package events
 import (
 	"sync"
 
-	"github.com/atterpac/email/internal/model"
+	"github.com/atterpac/pigeon/internal/model"
 )
 
 // Kind classifies a change.

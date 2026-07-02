@@ -12,13 +12,13 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 
-	"github.com/atterpac/email/internal/desktop"
-	"github.com/atterpac/email/internal/desktop/notify"
-	"github.com/atterpac/email/internal/desktop/onboard"
-	"github.com/atterpac/email/internal/desktop/service"
-	"github.com/atterpac/email/internal/email"
-	"github.com/atterpac/email/internal/paths"
-	"github.com/atterpac/email/internal/provider"
+	"github.com/atterpac/pigeon/internal/desktop"
+	"github.com/atterpac/pigeon/internal/desktop/notify"
+	"github.com/atterpac/pigeon/internal/desktop/onboard"
+	"github.com/atterpac/pigeon/internal/desktop/service"
+	"github.com/atterpac/pigeon/internal/email"
+	"github.com/atterpac/pigeon/internal/paths"
+	"github.com/atterpac/pigeon/internal/provider"
 )
 
 //go:embed all:dist

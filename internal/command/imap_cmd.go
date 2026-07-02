@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/atterpac/email/internal/model"
-	"github.com/atterpac/email/internal/provider"
+	"github.com/atterpac/pigeon/internal/model"
+	"github.com/atterpac/pigeon/internal/provider"
 )
 
 func provRef(mailbox string) provider.MailboxRef {

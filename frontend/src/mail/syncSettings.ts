@@ -1,8 +1,8 @@
 // Thin wrapper over the Wails SyncSettings service. Calls are no-ops (resolved
 // gracefully) when running outside the desktop app, e.g. the browser preview,
 // so callers don't need to branch on the runtime.
-import { SyncSettings } from '../bindings/github.com/atterpac/email/internal/desktop'
-import { Prefs as NotifyPrefs } from '../bindings/github.com/atterpac/email/internal/desktop/notify/models'
+import { SyncSettings } from '../bindings/github.com/atterpac/pigeon/internal/desktop'
+import { Prefs as NotifyPrefs } from '../bindings/github.com/atterpac/pigeon/internal/desktop/notify/models'
 
 export type NotifyPrefsInput = {
   mode: string

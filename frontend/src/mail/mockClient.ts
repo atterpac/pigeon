@@ -20,7 +20,7 @@ const labels: Label[] = [
 
 let conversations: Conversation[] = [
   row('t-rate-limit', 'Marina Chen', 'marina@example.com', 'Re: API rate limiting design', 'Looks good - one concern about burst handling...', '2026-06-25T09:24:00', ['team'], true, false, 3),
-  row('t-github', 'GitHub', 'noreply@github.com', '[atterpac/email] CI failed', 'Type-check failed on generated bindings', '2026-06-25T08:40:00', ['alerts'], true, false, 1, true, 'updates'),
+  row('t-github', 'GitHub', 'noreply@github.com', '[atterpac/pigeon] CI failed', 'Type-check failed on generated bindings', '2026-06-25T08:40:00', ['alerts'], true, false, 1, true, 'updates'),
   row('t-sentry', 'Sentry', 'alerts@sentry.io', 'New issue in mail bridge', 'Cannot resolve @wailsio/runtime in frontend build', '2026-06-25T08:15:00', ['alerts'], true, false, 1, true, 'updates'),
   row('t-npm', 'npm', 'npm@npmjs.com', 'Security advisory: lodash', 'High severity - upgrade to 4.17.21', '2026-06-24T11:05:00', ['alerts'], false, false, 1, false, 'updates'),
   row('t-stripe', 'Stripe', 'receipts@stripe.com', 'Payment received - $2,400.00', 'Invoice INV-2043 paid by Acme Inc', '2026-06-24T09:31:00', ['receipts'], false, true, 1, false, 'updates'),

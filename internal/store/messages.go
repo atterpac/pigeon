@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/atterpac/email/internal/classify"
-	"github.com/atterpac/email/internal/events"
-	"github.com/atterpac/email/internal/model"
-	gen "github.com/atterpac/email/internal/store/db"
+	"github.com/atterpac/pigeon/internal/classify"
+	"github.com/atterpac/pigeon/internal/events"
+	"github.com/atterpac/pigeon/internal/model"
+	gen "github.com/atterpac/pigeon/internal/store/db"
 )
 
 // publish emits a changefeed event (no-op if the bus is unset or ids empty).

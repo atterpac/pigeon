@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atterpac/email/internal/model"
-	"github.com/atterpac/email/internal/store"
+	"github.com/atterpac/pigeon/internal/model"
+	"github.com/atterpac/pigeon/internal/store"
 )
 
 func TestMutationsOptimisticAndDrained(t *testing.T) {

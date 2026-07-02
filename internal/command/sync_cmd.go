@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/atterpac/email/internal/blob"
-	"github.com/atterpac/email/internal/model"
-	"github.com/atterpac/email/internal/paths"
-	"github.com/atterpac/email/internal/store"
-	synceng "github.com/atterpac/email/internal/sync"
+	"github.com/atterpac/pigeon/internal/blob"
+	"github.com/atterpac/pigeon/internal/model"
+	"github.com/atterpac/pigeon/internal/paths"
+	"github.com/atterpac/pigeon/internal/store"
+	synceng "github.com/atterpac/pigeon/internal/sync"
 )
 
 func openStore(ctx context.Context) (*store.Store, error) {
